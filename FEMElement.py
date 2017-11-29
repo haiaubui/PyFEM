@@ -7,7 +7,7 @@ Created on Fri Nov 10 11:40:01 2017
 from copy import deepcopy
 import numpy as np
 #import scipy.linalg as la
-#import injectionArray as ia
+import injectionArray as ia
 
 class CommonData(object):
     """
@@ -27,14 +27,18 @@ class CommonData(object):
         self.intData = intData
         self.Nnod = Nnod
         self.Ndim = ndim
-        self.N_ = []
-        self.ng = intData.getNumberPoint()
-        for i in range(self.ng):
-            self.N_.append(np.zeros(self.Nnod))
+        if intData is not None:
+            self.N_ = []
+            self.ng = intData.getNumberPoint()
+            for i in range(self.ng):
+                self.N_.append(np.zeros(self.Nnod))
            
             
     def getN(self):
-        return self.N_
+        try:
+            return self.N_
+        except AttributeError:
+            return None
 
 class Element(object):
     """
@@ -351,16 +355,77 @@ class StandardElement(Element):
         for i in range(self.intData.getNumberPoint()):
             self.dNs_.append(np.zeros((self.Ndim,self.Nnod)))
         self.calculateBasis(self.nodeOrder)
-        self.R = np.zeros(self.Ndof,self.dtype)
-        self.K = np.zeros((self.Ndof,self.Ndof),self.dtype)
-        self.D = None
-        self.M = None
-        if self.Nodes[0].getTimeOrder() > 0:
-            self.D = np.zeros((self.Ndof,self.Ndof),self.dtype)
-        
-        if self.Nodes[0].getTimeOrder() == 2:
-            self.M = np.zeros((self.Ndof,self.Ndof),self.dtype)
-            
+        self.__prepare_matrices__()
+#        self.R = ia.zeros(self.Ndof*self.Nnod,self.dtype)
+#        self.K = np.zeros((self.Ndof,self.Ndof),self.dtype)
+#        self.D = None
+#        self.M = None
+#        if self.Nodes[0].getTimeOrder() > 0:
+#            self.D = ia.zeros((self.Ndof,self.Ndof),self.dtype)
+#        
+#        if self.Nodes[0].getTimeOrder() == 2:
+#            self.M = ia.zeros((self.Ndof,self.Ndof),self.dtype)
+    
+    def __prepare_matrices__(self):
+        self.K = []
+        self.R = []
+        if self.timeOrder > 0:
+            self.D = []
+        if self.timeOrder == 2:
+            self.M = []
+        for i in range(self.Nnod):
+            self.K.append([])
+            self.R.append(ia.zeros(self.Ndof,self.dtype))
+            if self.timeOrder > 0:
+                self.D.append([])
+            if self.timeOrder == 2:
+                self.M.append([])
+            for j in range(self.Nnod):
+                self.K[i].append(ia.zeros((self.Ndof,self.Ndof),self.dtype))
+                if self.timeOrder > 0:
+                    self.D[i].append(ia.zeros((self.Ndof,self.Ndof),self.dtype))
+                if self.timeOrder == 2:
+                    self.M[i].append(ia.zeros((self.Ndof,self.Ndof),self.dtype))
+    
+    def connect(self, rGlob, rGlobD, kGlob, kGlobD,\
+    dGlob, dGlobD, mGlob, mGlobD):
+        """
+        Connect local matrices to global matrices
+        """        
+        for inod in range(self.Nnod):
+            ids1 = self.Nodes[inod].getID()
+            for idof in range(self.Ndof):
+                id1 = ids1[idof]
+                if id1 >= 0:
+                    self.R[inod].connect(idof,rGlob,id1)
+                elif id1 < -1:
+                    self.R[inod].connect(idof,rGlobD,-id1-2)
+            for jnod in range(self.Nnod):
+                ids2 = self.Nodes[jnod].getID()
+                for idof in range(self.Ndof):
+                    id1 = ids1[idof]
+                    if id1 >= 0:
+                        for jdof in range(self.Ndof):
+                            id2 = ids2[idof]
+                            if id2 >= 0:
+                                self.K[inod][jnod].connect((idof,jdof),kGlob,\
+                                (id1,id2))
+                                if self.timeOrder > 0:
+                                    self.D[inod][jnod].connect((idof,jdof),\
+                                    dGlob,(id1,id2))
+                                if self.timeOrder == 2:
+                                    self.M[inod][jnod].connect((idof,jdof),\
+                                    mGlob,(id1,id2))
+                            elif id2 < -1:
+                                self.K[inod][jnod].connect((idof,jdof),kGlobD,\
+                                (id1,-id2-2))
+                                if self.timeOrder > 0:
+                                    self.D[inod][jnod].connect((idof,jdof),\
+                                    dGlobD,(id1,-id2-2))
+                                if self.timeOrder == 2:
+                                    self.M[inod][jnod].connect((idof,jdof),\
+                                    mGlobD,(id1,-id2-2))
+    
         
     def getFactor(self):
         return self.factor[self.ig]
@@ -466,16 +531,7 @@ class StandardElement(Element):
         # Get matrices from data
         timeOrder = data.getTimeOrder()
         t = data.getTime()
-        if not linear:
-            vGlob = data.getRi()
-            vGlobD = data.getRid()
-            kGlob = data.getKt()
-            kGlobD = data.getKtd()
-            dGlob = data.getD()
-            dGlobD = data.getDd()
-            mGlob = data.getM()
-            mGlobD = data.getMd()
-        else:
+        if linear:
             kGlob = data.getKtL()
             kGlobD = data.getKtLd()
             dGlob = data.getDL()
@@ -487,10 +543,23 @@ class StandardElement(Element):
         GaussPoints = self.intData
         
         # initialized matrices and vector
-        R = self.R
-        K = self.K
-        D = self.D
-        M = self.M
+        if not linear:
+            R = self.R
+            K = self.K
+            D = self.D
+            M = self.M
+        else:
+            R = np.zeros(self.Ndof,self.dtype)
+            K = np.zeros((self.Ndof,self.Ndof),self.dtype)
+            if self.timeOrder > 0:
+                D = np.zeros((self.Ndof,self.Ndof),self.dtype)
+            else:
+                D = None
+            if self.timeOrder == 2:
+                M = np.zeros((self.Ndof,self.Ndof),self.dtype)
+            else:
+                M = None
+                
         self.ig = -1
             
         # loop over Gaussian points
@@ -544,39 +613,39 @@ class StandardElement(Element):
             # loop over node i            
             for i in range(self.Nnod):
                 # calculate and assemble load vector
-                self.calculateR(R,i,t)
-                assembleVector(vGlob, vGlobD, R, self.Nodes[i])
+                self.calculateR(R[i],i,t)
+                #assembleVector(vGlob, vGlobD, R, self.Nodes[i])
                 
                 # loop over node j
                 try:
-                    self.calculateK(K,i,0,t)
-                    assembleMatrix(kGlob,kGlobD,K,\
-                    self.Nodes[i],self.Nodes[0])
+                    self.calculateK(K[i][j],i,0,t)
+                    #assembleMatrix(kGlob,kGlobD,K,\
+                    #self.Nodes[i],self.Nodes[0])
                     for j in range(1,self.Nnod):
                         # calculate and assemble matrices
-                        self.calculateK(K,i,j,t)
-                        assembleMatrix(kGlob,kGlobD,K,\
-                        self.Nodes[i],self.Nodes[j])
+                        self.calculateK(K[i][j],i,j,t)
+                        #assembleMatrix(kGlob,kGlobD,K,\
+                        #self.Nodes[i],self.Nodes[j])
                 except AttributeError:
                     pass
                 try:
-                    self.calculateD(D,i,0,t)
-                    assembleMatrix(dGlob,dGlobD,D,\
-                    self.Nodes[i],self.Nodes[0])
+                    self.calculateD(D[i][j],i,0,t)
+                    #assembleMatrix(dGlob,dGlobD,D,\
+                    #self.Nodes[i],self.Nodes[0])
                     for j in range(1,self.Nnod):
-                        self.calculateD(D,i,j,t)
-                        assembleMatrix(dGlob,dGlobD,D,\
-                        self.Nodes[i],self.Nodes[j])
+                        self.calculateD(D[i][j],i,j,t)
+                        #assembleMatrix(dGlob,dGlobD,D,\
+                        #self.Nodes[i],self.Nodes[j])
                 except (AttributeError, TypeError):
                     pass
                 try:
-                    self.calculateM(M,i,0,t)
-                    assembleMatrix(mGlob,mGlobD,M,\
-                    self.Nodes[i],self.Nodes[0])                        
+                    self.calculateM(M[i][j],i,0,t)
+                    #assembleMatrix(mGlob,mGlobD,M,\
+                    #self.Nodes[i],self.Nodes[0])                        
                     for j in range(1,self.Nnod):
-                        self.calculateM(M,i,j,t)
-                        assembleMatrix(mGlob,mGlobD,M,\
-                        self.Nodes[i],self.Nodes[j])
+                        self.calculateM(M[i][j],i,j,t)
+                        #assembleMatrix(mGlob,mGlobD,M,\
+                        #self.Nodes[i],self.Nodes[j])
                 except (AttributeError, TypeError):
                     pass
 

@@ -211,19 +211,20 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         Calculate load matrix R
         """
         r = self.x_[0]
-        R[0] = self.dN_[1,inod]*self.gradu_[1,0]
-        R[0] += (self.N_[inod]/r+self.dN_[0,inod])*\
+        re = self.dN_[1,inod]*self.gradu_[1,0]
+        re += (self.N_[inod]/r+self.dN_[0,inod])*\
         (self.u_[0]/r+self.gradu_[0,0])
-        R[0] /= self.material.mu0
+        re /= self.material.mu0
         if self.material.hysteresis:
-            R[0] += self.material.Mu[0]*self.dN_[1,inod]
-            R[0] -= self.material.Mu[1]*(self.N_[inod]/r+self.dN_[0,inod])
+            re += self.material.Mu[0]*self.dN_[1,inod]
+            re -= self.material.Mu[1]*(self.N_[inod]/r+self.dN_[0,inod])
         if self.timeOrder > 0:
-            R[0] += self.N_[inod]*self.v_[0]*self.material.sigma
+            re += self.N_[inod]*self.v_[0]*self.material.sigma
         if self.timeOrder == 2:
-            R[0] += self.N_[inod]*self.a_[0]*self.material.eps
-        R[0] -= self.N_[inod]*self.getBodyLoad(t)
-        R[0] *= self.getFactor()
+            re += self.N_[inod]*self.a_[0]*self.material.eps
+        re -= self.N_[inod]*self.getBodyLoad(t)
+        re *= self.getFactor()
+        R[0] += re
 
 def readInput(filename,nodeOrder,timeOrder,intData,Ndof = 1):
     mesh = FM.Mesh()
@@ -442,7 +443,7 @@ def create_simple_mesh():
     
     return mesh
         
-mesh = create_simple_mesh()
+#mesh = create_simple_mesh()
 
 mesh = create_mesh()
 

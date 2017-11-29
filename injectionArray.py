@@ -8,6 +8,8 @@ Created on Mon Nov 27 09:42:21 2017
 import numpy as np
 import itertools as itl
 
+__all__ = ['injectArray','zeros','array']
+
 class injectArray(object):
     """
     Array of different elements of other array, only support maximum 2-d array
@@ -125,7 +127,7 @@ class injectArray(object):
         return self
         
     def __add__(self, other):
-        res = np.zeros(self.size, self.dtype)
+        res = np.empty(self.size, self.dtype)
         if self.ndim == 1:
             a = range(self.size)
             try:
@@ -170,7 +172,7 @@ class injectArray(object):
         return self
         
     def __sub__(self, other):
-        res = np.zeros(self.size, self.dtype)
+        res = np.empty(self.size, self.dtype)
         if self.ndim == 1:
             a = range(self.size)
             try:
@@ -215,7 +217,7 @@ class injectArray(object):
         return self
         
     def __mul__(self, other):
-        res = np.zeros(self.size, self.dtype)
+        res = np.empty(self.size, self.dtype)
         if self.ndim == 1:
             a = range(self.size)
             try:
@@ -260,7 +262,7 @@ class injectArray(object):
         return self
         
     def __div__(self, other):
-        res = np.zeros(self.size, self.dtype)
+        res = np.empty(self.size, self.dtype)
         if self.ndim == 1:
             a = range(self.size)
             try:
@@ -409,6 +411,8 @@ if __name__ == '__main__':
     print(testarr7)
     testarr4 += testarr3
     print(testarr4)
+    testarr2[1,1] += 5
+    print(testarr2)
     #testarr8 = zeros((3,3),dtype = 'float64')
     #testarr6 = np.outer(testarr3,testarr5,testarr8)
     #print(array(testarr6))

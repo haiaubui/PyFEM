@@ -171,11 +171,18 @@ class Algorithm(object):
             
     def connect(self):
         """
-        Connect global vectors to nodes so that the assembling processes
-        can be ignored
+        Connect global vectors and matrices to nodes so that the assembling 
+        processes can be ignored
         """
         for n in self.mesh.getNodes():
             n.connect(self.U,self.V,self.A)
+        
+        try:
+            for e in self.mesh.getElements():
+                e.connect(self.Ri, self.Rid, self.Kt, self.Ktd,\
+                self.D, self.Dd, self.M, self.Md)
+        except AttributeError:
+            pass
             
     def calculateMatrices(self):
         """
