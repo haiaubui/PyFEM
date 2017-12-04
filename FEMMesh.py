@@ -76,6 +76,14 @@ class Mesh(object):
         """
         self.Elements.append(Element)
         self.Ne += 1
+        nodes = Element.getNodes()
+        for i,n in enumerate(nodes):
+            try:
+                idx = self.Nodes.index(n)
+                nodes[i] = self.Nodes[idx]
+            except ValueError:
+                self.Nodes.append(n)
+                self.Nnod += 1
         
     def addElements(self, Elements):
         """
@@ -153,10 +161,16 @@ class MeshWithBoundaryElement(Mesh):
         Input:
             Element: element to be added
         """
-        self.Elements.append(Element)
-        self.Ne += 1
+        self.addElement(Element)
         self.BoundaryElements.append(Element)
         self.NBe += 1
+        
+    def addBoundaryElements(self, elements):
+        try:
+            for e in elements:
+                self.addBoundaryElement(e)
+        except TypeError:
+            self.addBoundaryElement(elements)
     
     def getBoundaryElements(self):
         """
