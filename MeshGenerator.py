@@ -205,6 +205,10 @@ class Edge(object):
     def divideSections(self, ndiv):
         Npoint = ndiv - 1
         assert Npoint >= 0, 'Number of division points added must be positive'
+        if Npoint == 0:
+            self.divNodes = self.Nodes
+            self.divEdges = self
+            return
         self.Ndiv = Npoint
         delta = 1.0/(Npoint+1)
         tn = [(i+1)*delta for i in range(Npoint)]
@@ -802,11 +806,20 @@ class Geometry(object):
         self.bndMesh = []
         self.normBndVec = []
         for i,e in enumerate(coveredges):
+            e.divideSections(e.Ndiv+1)
             me = e.getDivEdges()
-            for de in me:
+            try:
+                for de in me:
+                    try:
+                        if de not in self.bndMesh:
+                            self.bndMesh.append(de)
+                            self.normBndVec.append(normvec[i])
+                    except NodesOppositeOrder:
+                        pass
+            except TypeError:
                 try:
-                    if de not in self.bndMesh:
-                        self.bndMesh.append(de)
+                    if me not in self.bndMesh:
+                        self.bndMesh.append(me)
                         self.normBndVec.append(normvec[i])
                 except NodesOppositeOrder:
                     pass
@@ -835,6 +848,9 @@ class Geometry(object):
         if nodes is None:
             nodes = []
             
+        if nodeFunc is None:
+            nf = self.getNodes()[0].copyToPosition
+            
         elem = []
         for e in self.bndMesh:
             nodesx = nodeElemFunc(e)
@@ -845,7 +861,10 @@ class Geometry(object):
                     idx = nodes.index(nodesx[i])
                     elem[-1][i] = nodes[idx]
                 except ValueError:
-                    elem[-1][i] = nodeFunc(nodesx[i].getX(),Ndof)
+                    if nodeFunc is not None:
+                        elem[-1][i] = nodeFunc(nodesx[i].getX(),Ndof)
+                    else:
+                        elem[-1][i] = nf(nodesx[i].getX())
                     nodes.append(elem[-1][i])
                     
         return nodes, elem, self.normBndVec
