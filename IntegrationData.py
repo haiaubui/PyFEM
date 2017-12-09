@@ -41,9 +41,7 @@ class GaussianQuadrature(IntegrationData):
             raise UnsupportedGaussQuadrature
         self.Ng = ng
         self.Ndim = ndim
-        self.Npoint = 1
-        for i in range(ndim):
-            self.Npoint *= self.Ng[i]
+        self.Npoint = np.prod(Ng)
         self.xg = None
         self.wg = None
         if not gen is None and callable(gen):
@@ -65,6 +63,30 @@ class GaussianQuadrature(IntegrationData):
             return self.xg[idx], self.wg[idx]
         return self.xg[:,idx], self.wg[:,idx]
         
+    def s_iter(self, op):
+        """
+        second iterator
+        default behaviour is similar to default iterator
+        This iterator can be override to have different behaviour, for example,
+        in boundary element integration
+        Notice: this generator yields one Gaussian point and two weights at one
+        loop step.
+        """
+        for i in range(self.Ng):
+            yield self.xg[i], self.wg[i], self.wg[i]
+            
+    def t_iter(self, op):
+        """
+        third iterator
+        default behaviour is similar to default iterator
+        This iterator can be override to have different behaviour, for example,
+        in boundary element integration
+        Notice: this generator yields two Gaussian points and two weights at 
+        one loop step.
+        """
+        for i in range(self.Ng):
+            yield self.xg[i], self.wg[i], self.xg[i], self.wg[i]
+        
     def getNumberPoint(self):
         """
         Return total number of Gaussian Quadrature points
@@ -83,7 +105,7 @@ class GaussianQuadrature(IntegrationData):
         
     def generatePoints(self, gen):
         if self.Ndim == 1:
-            self.xg, self.wg = gen(self.Ng[0])
+            self.xg, self.wg = gen(self.Ng)
         if self.Ndim == 2:
             xg1, wg1 = gen(self.Ng[0])
             xg2, wg2 = gen(self.Ng[1])
@@ -95,6 +117,17 @@ class GaussianQuadrature(IntegrationData):
             xg3, wg3 = gen(self.Ng[2])
             self.xg = np.array(list(it.product(xg1,xg2,xg3))).transpose()
             self.wg = np.array(list(it.product(wg1,wg2,xg3))).transpose()
+
+def integrateGauss(func, xb, xe, xg, wg):
+    Jacobi = (xe-xb)/2.0
+    def x_(xi):
+        return Jacobi*xi+xb
+    ng = len(xg)
+    res = 0
+    for i in range(ng):
+        res += func(x_(xg(i)))*wg(i)
+    return res
+
         
 def Gaussian1D(ng):
     xi = np.empty(ng)
@@ -492,7 +525,7 @@ def Gaussian1D(ng):
 	    alpha[16]  = 0.0497145488967877
 	    alpha[17]  = 0.0216160135259334
     else:
-        raise UnsupportedGaussQuadrature
+        return np.polynomial.legendre.leggauss(ng)
     return xi, alpha
         
 class UnsupportedGaussQuadrature(Exception):

@@ -206,11 +206,8 @@ class Algorithm(object):
             self.ML.fill(0.0)
         if self.timeOrder > 0:
             self.DL.fill(0.0)
-        try:
-            for element in self.mesh:
-                element.calculate(self,linear=True)
-        except:
-            pass
+        for element in self.mesh:
+            element.calculate(self,linear=True)
             
     def addLinearMatrices(self):
         self.Kt += self.KtL

@@ -443,9 +443,9 @@ def create_simple_mesh():
     
     return mesh
         
-#mesh = create_simple_mesh()
+mesh = create_simple_mesh()
 
-mesh = create_mesh()
+#mesh = create_mesh()
 
 mesh.generateID()      
 

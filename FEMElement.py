@@ -4,7 +4,7 @@ Created on Fri Nov 10 11:40:01 2017
 
 @author: haiau
 """
-from copy import deepcopy
+
 import numpy as np
 #import scipy.linalg as la
 import injectionArray as ia
@@ -122,6 +122,22 @@ class Element(object):
             
         return s
         
+    def __contains__(self, item):
+        return item in self.Nodes
+        
+    def hasNodes(self, nodes):
+        """
+        return True if nodes belongs to this element
+        false otherwise
+        """
+        try:
+            for n in nodes:
+                if n not in self.Nodes:
+                    return False
+            return True
+        except TypeError:
+            return False
+        
     def getNodes(self):
         """
         return node list
@@ -165,50 +181,57 @@ class Element(object):
         """
         return self.dN_
             
-    def getX(self, x):
+    def getX(self, x, N_ = None):
         """
         Get coordinates at parametric coordinates x (x from calculateBasis)
         """
-        if self.N_ is None:
+        if N_ is None:
+            N_ = self.N_
+        
+        try:
+            for i in range(self.Nnod):
+                x += self.Nodes[i].getX()*N_[i]
+        except TypeError:
             raise ElementBasisFunctionNotCalculated
         
-        for i in range(self.Nnod):
-            x += self.Nodes[i].getX()*self.N_[i]
-        
-    def getU(self, u):
+    def getU(self, u, N_ = None):
         """
         Get displacement at parametric coordinates x (x from calculateBasis)
         Input:
             u : mutable result
             data: class that can return global displacement vector(deprecated)
         """
+        if N_ is None:
+            N_ = self.N_
+            
         try:
             for i in range(self.Nnod):
 #                u += self.Nodes[i].getFromGlobalU(data.getU(),self.__temp_u)*\
 #                self.N_[i]
-                u += self.Nodes[i].getU()*self.N_[i]
+                u += self.Nodes[i].getU()*N_[i]
         except TypeError:
             raise ElementBasisFunctionNotCalculated
         
-    def getGradU(self, gradu, data):
+    def getGradU(self, gradu, data, dN_ = None):
         """
         Get gradient of displacement
         Input:
             u : mutable result
             data: class that can return global displacement vector
         """
-        
+        if dN_ is None:
+            dN_ = self.dN_
         #gradu.fill(0.0)
         try:
             for i in range(self.Nnod):
-                np.outer(self.dN_[:,i:i+1],\
+                np.outer(dN_[:,i:i+1],\
                 self.Nodes[i].getFromGlobalU(data.getU(),self.__temp_u),\
                 self.__temp_grad_u)
                 gradu += self.__temp_grad_u
         except TypeError:
             raise ElementBasisFunctionNotCalculated
     
-    def getV(self, u):
+    def getV(self, u, N_ = None):
         """
         Get velocity at parametric coordinates x (x from calculateBasis)
         Input:
@@ -217,30 +240,33 @@ class Element(object):
         """
 #        if data.getTimeOrder() < 1:
 #            raise TimeOrderMismatch
-            
+        if N_ is None:
+            N_ = self.N_    
         try:
             for i in range(self.Nnod):
 #                u += self.Nodes[i].getFromGlobalV(data.getV(),self.__temp_u)*\
 #                self.N_[i]
-                u += self.Nodes[i].getV()*self.N_[i]
+                u += self.Nodes[i].getV()*N_[i]
         except TypeError:
             raise ElementBasisFunctionNotCalculated
 
         
-    def getA(self, u):
+    def getA(self, u, N_ = None):
         """
         Get acceleration at parametric coordinates x (x from calculateBasis)
         Input:
             u : mutable result
             data: class that can return global acceleration vector(deprecated)
         """
+        if N_ is None:
+            N_ = self.N_
 #        if data.getTimeOrder() < 2:
 #            raise TimeOrderMismatch
         try:
             for i in range(self.Nnod):
 #                u += self.Nodes[i].getFromGlobalA(data.getA(),self.__temp_u)*\
 #                self.N_[i]
-                u += self.Nodes[i].getA()*self.N_[i]
+                u += self.Nodes[i].getA()*N_[i]
         except TypeError:
             raise ElementBasisFunctionNotCalculated
             
@@ -310,6 +336,12 @@ class Element(object):
                 print(self.bodyLoad)
         else:
             return 0.0
+            
+    def setMaterial(self, mat):
+        """
+        Set material of element
+        """
+        self.material = mat
         
     def calculate(self, data):
         """
@@ -327,7 +359,7 @@ class StandardElement(Element):
     This is super class for further derivations
     """
     def __init__(self, Nodes, pd, basisFunction, nodeOrder, material, intData,\
-    dtype = 'float64', commonData = None):
+    dtype = 'float64', commonData = None, ndime = 2):
         """
         Initialize an Standard Element (in both 2-d and 3-d case)
         In 1-d case, this is a normal 1 dimensional element
@@ -344,14 +376,18 @@ class StandardElement(Element):
             intData: integration data
             dtype: datatype of arrays, default = 'float64'
             commonData: common data shared between elements
+            ndime: 2: 2-d element
+                   3: 3-d element
+                   1: 1-d element
         """
         Element.__init__(self, Nodes, pd, basisFunction, material, intData,\
         dtype, commonData)
+        self.Ndime = ndime
         self.nodeOrder = nodeOrder
         # Temporary variables
         self.ig = 0
         self.factor = [0.0]*self.intData.getNumberPoint()
-        self.dNs_ = []   
+        self.dNs_ = []
         for i in range(self.intData.getNumberPoint()):
             self.dNs_.append(np.zeros((self.Ndim,self.Nnod)))
         self.calculateBasis(self.nodeOrder)
@@ -369,6 +405,8 @@ class StandardElement(Element):
     def __prepare_matrices__(self):
         self.K = []
         self.R = []
+        self.D = None
+        self.M = None
         if self.timeOrder > 0:
             self.D = []
         if self.timeOrder == 2:
@@ -448,6 +486,16 @@ class StandardElement(Element):
         #dN_ = np.linalg.solve(np.transpose(self.Jmat),dN_)
         #la.solve(self.Jmat,dN_,overwrite_b = True)
         det = __determinant__(Jmat)
+        if np.allclose(det,0.0,rtol = 1.0e-14):
+            for i in range(self.Nnod):
+                a,b = 0.0,0.0
+                if not np.allclose(Jmat[0,0],0.0,rtol=1.0e-14):
+                    a = dN_[0,i]/Jmat[0,0]
+                if not np.allclose(Jmat[0,1],0.0,rtol=1.0e-14):
+                    b = dN_[0,i]/Jmat[0,1]
+                dN_[0,i] = a
+                dN_[1,i] = b
+            return np.sqrt(Jmat[0,0]**2 + Jmat[0,1]**2)
         for i in range(self.Nnod):
             a = Jmat[0,0]*dN_[0,i]+Jmat[0,1]*dN_[1,i]
             b = Jmat[1,0]*dN_[0,i]+Jmat[1,1]*dN_[1,i]
@@ -474,8 +522,19 @@ class StandardElement(Element):
         """ 
         if self.Ndim == 1:
             return self.basisFunc(x_,self.pd,N_,dN_)
+        
+        try:
+            n1 = self.pd[0] + 1
+        except TypeError:
+            if self.Ndime == 1:
+                try:
+                    return self.basisFunc(x_,self.pd,N_,dN_[0,:])
+                except IndexError:
+                    N_.fill(0.0)
+                    dN_.fill(0.0)
+                    return self.basisFunc(x_,self.pd,N_,dN_)
+                
             
-        n1 = self.pd[0] + 1
         n2 = self.pd[1] + 1
         n3 = 1
         if self.Ndim == 3:
@@ -651,168 +710,6 @@ class StandardElement(Element):
 
 # End of class StandardElement definition
 
-class StandardBoundary(StandardElement):
-    """
-    Standard Boundary element
-    Derived from Standard Element
-    """
-    def __init__(self, Nodes, pd, basisFunction, nodeOrder, intData, intSingData):
-        """
-        Initialize an Standard Boundary Element
-        Input:
-            Nodes: nodes of elements
-            pd: basis function degree(s),
-                if number of dimension == 1, pd is an integer
-                else, pd is an list
-            basisFunction: basis function, see super class info
-            nodeOrder: the order of nodes in elements, array like
-            intData: integration data
-            intSingData: singular integration data, list of two integration
-               data, one for inside element, one for outside lement
-        """
-        StandardElement.__init__(self, Nodes, pd, basisFunction, None, intData)
-        self.nodeOrder = nodeOrder
-        self.factor = 0.0
-        self.intSingData = intSingData
-        
-    def subCalculateK(self, K, element, t):
-        pass
-    
-    def subCalculateD(self, D, element, t):
-        pass
-    
-    def subCalculateM(self, M, element, t):
-        pass
-    
-    def subCalculate(self, data, element, Nodei):
-        # Get matrices from data
-        timeOrder = data.getTimeOrder()
-        #vGlob,vGlobD = data.getRi(),data.getRid()
-        kGlob,kGlobD = data.getKt(),data.getKtd()
-        dGlob,dGlobD = data.getD(),data.getDd()
-        mGlob,mGlobD = data.getM(),data.getMd()
-        
-        #Gauss integration points
-        GaussPoints = self.intSingData[0]
-        
-        # initialized matrices and vector
-        K,D,M = self.K,self.D,self.M
-            
-        for xg, wg in GaussPoints:
-            self.calculateBasis(xg, self.nodeOrder)
-            self.factor = self.Jacobian(self.dN_)
-            
-            # Calculate coordinate at current Gaussian point
-            self.getAllValue(data)
-            
-            # Initialize matrices
-            self.initializeMatrices()
-            
-            #self.material.calculate(self)
-                
-            # loop over node j
-            for j in range(self.Nnod):
-                # calculate and assemble matrices
-                self.subCalculateK(K, element)
-                assembleMatrix(kGlob,kGlobD,K,Nodei,self.Nodes[j])
-                if timeOrder > 0:
-                    self.subCalculateD(D, element)
-                    assembleMatrix(dGlob,dGlobD,D,Nodei,self.Nodes[j])
-                if timeOrder == 2:
-                    self.subCalculateM(M, element)
-                    assembleMatrix(mGlob,mGlobD,M,Nodei,self.Nodes[j])        
-        
-    def calculate(self, data):
-        """
-        Calculate matrices and vectors
-        Input:
-            data: a class that have methods return global matrices and vectors
-        """
-        # Get matrices from data
-        t = data.getTime()
-        timeOrder = data.getTimeOrder()
-        vGlob,vGlobD = data.getRi(),data.getRid()
-        kGlob,kGlobD = data.getKt(),data.getKtd()
-        dGlob,dGlobD = data.getD(),data.getDd()
-        mGlob,mGlobD = data.getM(),data.getMd()
-        
-        otherB = data.getMesh().getBoundaryElements()
-        
-        #make a copy of this object to calculate second integration
-        thisE = deepcopy(self)
-        
-        #Gauss integration points
-        GaussPoints = self.intData
-        SingData = self.intSingData[1]
-        
-        # initialized matrices and vector
-        R,K,D,M = self.R,self.K,self.D,self.M
-            
-        for xg, wg in GaussPoints:
-            self.calculateBasis(xg, self.nodeOrder)
-            self.factor = self.Jacobian(self.dN_)
-            
-            # Calculate coordinate at current Gaussian point
-            self.getAllValue(data)
-            
-            # Initialize matrices
-            self.initializeMatrices()
-            
-            self.material.calculate(self)
-            # loop over node i            
-            for i in range(self.Nnod):
-                # calculate and assemble load vector
-                self.calculateR(R,i,t)
-                assembleVector(vGlob, vGlobD, R, self.Nodes[i])
-                
-                # loop over node j
-                for j in range(self.Nnod):
-                    # calculate and assemble matrices
-                    self.calculateK(K,i,j,t)
-                    assembleMatrix(kGlob,kGlobD,K,\
-                    self.Nodes[i],self.Nodes[j])
-                    if timeOrder > 0:
-                        self.calculateD(D,i,j,t)
-                        assembleMatrix(dGlob,dGlobD,D,\
-                        self.Nodes[i],self.Nodes[j])
-                    if timeOrder == 2:
-                        self.calculateM(M,i,j,t)
-                        assembleMatrix(mGlob,mGlobD,M,\
-                        self.Nodes[i],self.Nodes[j])
-                        
-                # loop over orther boundary elements
-                for belement in otherB:
-                    if belement == self:
-                        continue
-                    self.subCalculate(data, self, self.Nodes[i])
-                    
-                for xgb,wgb in SingData:
-                    thisE.calculateBasis(xg, thisE.nodeOrder)
-                    thisE.factor = thisE.Jacobian(thisE.dN_)
-                    
-                    # Calculate coordinate at current Gaussian point
-                    thisE.getAllValue(data)
-                    
-                    # Initialize matrices
-                    self.initializeMatrices()
-                    
-                    # loop over node j
-                    for j in range(thisE.Nnod):
-                        # calculate and assemble matrices
-                        thisE.subCalculateK(K,self,t)
-                        assembleMatrix(kGlob,kGlobD,K,\
-                        self.Nodes[i],thisE.Nodes[j])
-                        if timeOrder > 0:
-                            thisE.calculateD(D,self,t)
-                            assembleMatrix(dGlob,dGlobD,D,\
-                            self.Nodes[i],thisE.Nodes[j])
-                        if timeOrder == 2:
-                            thisE.calculateM(M,self,t)
-                            assembleMatrix(mGlob,mGlobD,M,\
-                            self.Nodes[i],thisE.Nodes[j])
-
-# End of StandardBoundary class definition
-
 class ElementBasisFunctionNodeMismacht(Exception):
     """
     Exception in case of number of basis functions and number of node mismatcht
@@ -886,6 +783,8 @@ def assembleVector(vGlob, vGlobD, vLoc, iNode):
 def __determinant__(mat):
     if mat.shape == (2,2):
         det = mat[0,0]*mat[1,1] - mat[1,0]*mat[0,1]
+        if np.allclose(det,0.0,rtol = 1.0e-14):
+            return det
         a = mat[0,0]
         mat[0,0] = mat[1,1]/det
         mat[1,0] = -mat[1,0]/det

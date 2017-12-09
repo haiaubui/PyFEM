@@ -165,7 +165,7 @@ class Node(GeneralNode):
                 idx = self.ID[i]
                 if idx >= 0:
                     self.v_.connect(i, V, idx)
-        except TypeError:
+        except (AttributeError, TypeError):
             pass
         
         try:
@@ -173,7 +173,7 @@ class Node(GeneralNode):
                 idx = self.ID[i]
                 if idx >= 0:
                     self.a_.connect(i, A, idx)
-        except TypeError:
+        except (AttributeError, TypeError):
             pass
         
     def getFromGlobalU(self, uGlob, x):

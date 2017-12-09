@@ -42,7 +42,7 @@ class CrisfieldElement(FE.Element):
         self.L = np.linalg.norm(self.Nodes[1].getX()-self.Nodes[0].getX())
         self.Ndim = ndim
         
-    def calculate(self, data):
+    def calculate(self, data, linear = True):
         Kt = data.getKt()
         Ktd = data.getKtd()
         M = data.getM()
@@ -62,7 +62,9 @@ class CrisfieldElement(FE.Element):
                 
 # Nonlinear Crisfiedl Element:
 class NonlinearCrisfieldElement(CrisfieldElement):
-    def calculate(self, data):
+    def calculate(self, data, linear = False):
+        if linear:
+            return
         Kt = data.getKt()
         Ktd = data.getKtd()
         M = data.getM()
@@ -212,10 +214,24 @@ class plotOutput(FO.FEMOutput):
             else:
                 self.U = data.getU()
         if self.timeOrder > 0:
-            self.U[:,data.getCurrentStep()] = data.getU()
-            self.V[:,data.getCurrentStep()] = data.getV()
+            self.U[:,data.getCurrentStep()-1] = data.getU()
+            self.V[:,data.getCurrentStep()-1] = data.getV()
             if self.timeOrder == 2:
                 self.A[:,data.getCurrentStep()] = data.getA()
+
+class StructureNonlinearNewmark(NM.NonlinearAlphaAlgorithm):
+    def calculateREffect(self):
+        """
+        effective load vector
+        """
+        self.Ri *= -1.0
+        self.Ri += self.Re
+        if self.timeOrder > 0:
+            np.dot(self.D,self.V,self.__tempR__)
+            self.Ri -= self.__tempR__
+        if self.timeOrder == 2:
+            np.dot(self.M,self.A,self.__tempR__)
+            self.Ri -= self.__tempR__
 
 # Algorithm
 Nstep = 200
@@ -227,7 +243,7 @@ output = plotOutput(Nstep,mesh.getNeq(),1)
 #mesh.updateValues(output.getU(),None,None)
 #mesh.plot(init=False,col='r')
 #alg = NM.LinearNewmarkAlgorithm(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
-alg = NM.NonlinearNewmarkAlgorithm(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
+alg = StructureNonlinearNewmark(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
 alg.calculate()
 tarr = np.array(list(range(0,200)))*2.0e-2/200
 pl.plot(tarr,output.U[0,:],'b',tarr,output.U[1,:],'r')

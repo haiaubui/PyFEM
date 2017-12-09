@@ -22,13 +22,6 @@ class QuadElement(FE.StandardElement):
             self.nodeOrder = generateQuadNodeOrder(self.pd, self.Ndim)
         FE.StandardElement.basisND(self, x_, N_, dN_)
 
-class QuadBoundary(FE.StandardBoundary):
-    """
-    Boundary of Quadrilateral element
-    """
-    def calculateBasis(self, x_, NodeOrder):
-        return QuadElement.basisND(self,x_)
-
 
 class LagrangeElement1D(QuadElement):
     """
@@ -110,9 +103,9 @@ def generateQuadNodeOrder(pd, ndim, typeE = 'rcd'):
     if isinstance(pd, str):
         raise Exception('first parameters cannot be a string')
     if ndim == 1:
-        if isinstance(pd, (list,np.array,tuple)):
+        try:
             p = pd[0]
-        else:
+        except (TypeError, IndexError):
             p = pd
         return list(range(p+1))
     if ndim == 2:

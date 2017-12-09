@@ -170,12 +170,12 @@ class GeneralizedAlphaAlgorithm(FA.DynamicAlgorithm):
         """
         self.Ri *= -1.0
         self.Ri += self.Re
-        if self.timeOrder > 0:
-            np.dot(self.D,self.V,self.__tempR__)
-            self.Ri -= self.__tempR__
-        if self.timeOrder == 2:
-            np.dot(self.M,self.A,self.__tempR__)
-            self.Ri -= self.__tempR__
+        #if self.timeOrder > 0:
+        #    np.dot(self.D,self.V,self.__tempR__)
+        #    self.Ri -= self.__tempR__
+        #if self.timeOrder == 2:
+        #    np.dot(self.M,self.A,self.__tempR__)
+        #    self.Ri -= self.__tempR__
 
 
 class LinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
@@ -280,7 +280,7 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
             an1 = np.empty(self.Neq)
         # loop over time steps
         self.calculateLinearMatrices()
-        for self.istep in range(self.numberSteps):
+        for self.istep in range(1,self.numberSteps+1):
             print("Time step "+str(self.istep))
             self.generateExternalLoad()
             # loop over iterations
@@ -304,10 +304,13 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
             self.NewmarkApproximation(vn1,an1)
             np.copyto(self.U,self.u_n1)
             np.copyto(self.u_n,self.u_n1)
-            np.copyto(self.v_n,vn1)
-            np.copyto(self.a_n,an1)
-            np.copyto(self.V,vn1)
-            np.copyto(self.A,an1)
+            try:
+                np.copyto(self.v_n,vn1)
+                np.copyto(self.a_n,an1)
+                np.copyto(self.V,vn1)
+                np.copyto(self.A,an1)
+            except TypeError:
+                pass
             self.output.outputData(self)
         print("Finished!")
         self.output.finishOutput()
