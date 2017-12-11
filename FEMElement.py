@@ -98,6 +98,7 @@ class Element(object):
         self.__temp_grad_u = np.zeros((self.Ndim,self.Ndof),dtype)
         self.__temp_u = np.zeros(self.Ndof,dtype)
         self.bodyLoad = None
+        self.linear = False
         
     def __str__(self):
         """
@@ -124,6 +125,22 @@ class Element(object):
         
     def __contains__(self, item):
         return item in self.Nodes
+        
+    def isLinear(self):
+        """
+        Return true if the element is linear
+        false otherwise
+        """
+        return self.linear
+        
+    def setLinearity(self, lin):
+        """
+        Set linearity for this element
+        If lin is set to be True, the matrices and vectors will not
+        be calculated in iterations steps. They will be calculated if False is
+        specified
+        """
+        self.linear = lin
         
     def hasNodes(self, nodes):
         """
@@ -480,11 +497,7 @@ class StandardElement(Element):
             #np.outer(self.Nodes[i].getX(),dN_[:,i],temp)
             np.outer(dN_[:,i],self.Nodes[i].getX(),__tempJ__)
             Jmat += __tempJ__
-            
-        #Jinv = np.linalg.inv(Jmat)
-        #dN_ = np.dot(np.transpose(Jinv),dN_)
-        #dN_ = np.linalg.solve(np.transpose(self.Jmat),dN_)
-        #la.solve(self.Jmat,dN_,overwrite_b = True)
+        
         det = __determinant__(Jmat)
         if np.allclose(det,0.0,rtol = 1.0e-14):
             for i in range(self.Nnod):
@@ -578,6 +591,31 @@ class StandardElement(Element):
             self.D.fill(0.0)
         if not self.M is None:
             self.M.fill(0.0)
+            
+    def calculateBodyLoad(self, data):
+        """
+        Calculate body load
+        """
+        vGlob = data.getRe()
+        vGlobD = None
+        #vGlobD = data.getRiD()
+        
+        GaussPoints = self.intData
+        R = np.zeros(self.Ndof,self.dtype)
+        self.ig = -1
+        t = data.getTime()
+            
+        # loop over Gaussian points
+        for xg, wg in GaussPoints:
+            self.ig += 1
+            self.getBasis()
+            self.material.calculate(self)
+            for i in range(self.Nnod):
+                try:
+                    self.calculateRe(R,i,t)
+                    assembleVector(vGlob, vGlobD, R, self.Nodes[i])
+                except AttributeError:
+                    pass
     
     def calculate(self, data, linear = False):
         """
@@ -591,6 +629,8 @@ class StandardElement(Element):
         timeOrder = data.getTimeOrder()
         t = data.getTime()
         if linear:
+            vGlob = data.getRiL()
+            vGlobD = data.getRiLD()
             kGlob = data.getKtL()
             kGlobD = data.getKtLd()
             dGlob = data.getDL()
@@ -639,8 +679,11 @@ class StandardElement(Element):
             if linear:
                 for i in range(self.Nnod):
                     # calculate and assemble load vector
-                    #self.calculateR(R,i,t)
-                    #assembleVector(vGlob, vGlobD, R, self.Nodes[i])
+                    try:
+                        self.calculateRLinear(R,i,t)
+                        assembleVector(vGlob, vGlobD, R, self.Nodes[i])
+                    except AttributeError:
+                        pass
                     
                     # loop over node j
                     try:
@@ -672,7 +715,11 @@ class StandardElement(Element):
             # loop over node i            
             for i in range(self.Nnod):
                 # calculate and assemble load vector
-                self.calculateR(R[i],i,t)
+                try:
+                    self.calculateR(R[i],i,t)
+                except AttributeError:
+                    pass
+                
                 #assembleVector(vGlob, vGlobD, R, self.Nodes[i])
                 
                 # loop over node j

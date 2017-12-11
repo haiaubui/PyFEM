@@ -132,6 +132,8 @@ class Mesh(object):
         return self.NeqD
         
     def generateID(self):
+        if self.Nodes is None or len(self.Nodes) == 0:
+            raise EmptyMesh
         cntu = 0
         cntd = -1
         for i in range(self.Nnod):
@@ -183,4 +185,10 @@ class MeshWithBoundaryElement(Mesh):
         return number of boundary elements
         """
         return self.NBe
+
+class EmptyMesh(Exception):
+    """
+    Exception for empty mesh (mesh without nodes)
+    """
+    pass
         

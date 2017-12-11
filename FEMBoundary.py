@@ -35,6 +35,8 @@ class StandardBoundary(FE.StandardElement):
             commonData: common data shared between elements
             ndime: 2: 2-d element
                    1: 1-d element
+        Notice: Boundary Element is linear. However, a nonlinear element
+        derived from this element is possible.
         """
         FE.StandardElement.__init__(self, Nodes, pd, basisFunction, nodeOrder,\
         None, intData, dtype, commonData, ndime)
@@ -78,6 +80,7 @@ class StandardBoundary(FE.StandardElement):
         self.calculateBasisX(self.nodeOrder)
         #self.temp_weight = 0.0
         self.sing_int_type = 0
+        self.linear = True
         
     def getSingIntData(self, element):
         if self.ide == element.ide:
@@ -295,7 +298,10 @@ class StandardBoundary(FE.StandardElement):
                         pass
                 continue
             
-            self.subCalculateR(R[i],element,i)
+            try:
+                self.subCalculateR(R[i],element,i)
+            except:
+                pass
             #FE.assembleVector(vGlob, vGlobD, R, Nodei)
             try:
                 for j in range(self.Nnod):
@@ -417,7 +423,10 @@ class StandardBoundary(FE.StandardElement):
             # loop over node i            
             for i in range(self.Nnod):
                 # calculate and assemble load vector
-                self.calculateR(R[i],i,t)
+                try:
+                    self.calculateR(R[i],i,t)
+                except AttributeError:
+                    pass
                 #assembleVector(vGlob, vGlobD, R, self.Nodes[i])
                 
                 # loop over node j

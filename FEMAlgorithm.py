@@ -6,6 +6,7 @@ Created on Fri Nov 10 18:55:59 2017
 """
 
 import numpy as np
+import FEMMesh as FM
 
 class Algorithm(object):
     """
@@ -28,9 +29,11 @@ class Algorithm(object):
         for i in range(Mesh.getNnod()):
             if Mesh.getNodes()[i].getTimeOrder() != timeOrder:
                 raise AlgorithmTimeOrderMismatch
-                
-        # TODO: it would be better to generate ID before asgin Neq and NeqD
-        #       because it would affect the arrays and matrices
+        
+        try:        
+            self.mesh.generateID()
+        except FM.EmptyMesh:
+            pass
                 
         self.Neq = self.mesh.getNeq()
         self.NeqD = self.mesh.getNeqD()
@@ -43,6 +46,9 @@ class Algorithm(object):
         # Internal load vector
         self.Ri = np.zeros(self.Neq,dtype)
         self.Rid = np.zeros(self.NeqD,dtype)
+        self.RiL = np.zeros(self.Neq,dtype)
+        self.RiLd = np.zeros(self.NeqD,dtype)
+        self.__tempRi__ = np.zeros(self.Neq,dtype)
         # External load vector
         self.Re = np.zeros(self.Neq,dtype)
         # Displacement
@@ -93,11 +99,20 @@ class Algorithm(object):
         """
         return self.timeOrder
         
+    def getRe(self):
+        return self.Re
+    
     def getRi(self):
         return self.Ri
         
     def getRid(self):
         return self.Rid
+        
+    def getRiL(self):
+        return self.RiL
+        
+    def getRiLD(self):
+        return self.RiLd
         
     def getKt(self):
         return self.Kt
@@ -159,6 +174,10 @@ class Algorithm(object):
             node.addLoadTo(self.Re)
             if self.NonhomogeneousDirichlet:
                 node.assembleGlobalDirichlet(self.Ud)
+                
+    def calculateExternalBodyLoad(self):
+        for e in self.mesh.getElements():
+            e.calculateBodyLoad(self)
         
     def updateValues(self):
         """
@@ -195,7 +214,8 @@ class Algorithm(object):
             self.D.fill(0.0)
         self.Ri.fill(0.0)
         for element in self.mesh:
-            element.calculate(self)
+            if not element.isLinear():
+                element.calculate(self)
             
     def calculateLinearMatrices(self):
         """
@@ -207,18 +227,26 @@ class Algorithm(object):
         if self.timeOrder > 0:
             self.DL.fill(0.0)
         for element in self.mesh:
-            element.calculate(self,linear=True)
+            element.calculate(self,linear=True)       
             
     def addLinearMatrices(self):
+        
         self.Kt += self.KtL
+        self.RiL.fill(0.0)
+        np.dot(self.KtL,self.U,self.RiL)
         try:
             self.D += self.DL
+            np.dot(self.D,self.V,self.__tempRi__)
+            self.RiL += self.__tempRi__
         except:
             pass
         try:
             self.M += self.ML
+            np.dot(self.M,self.A,self.__tempRi__)
+            self.RiL += self.__tempRi__
         except:
             pass
+        self.Ri += self.RiL
             
     def calculate(self):
         """

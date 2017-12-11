@@ -43,6 +43,7 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         AE.AxisymmetricQuadElement.__init__(self,Nodes,pd,basisFunction,\
         nodeOrder,material,intData)
         self.store = True
+        self.linear = True
     
     def getB(self):
         B = np.array([-self.gradu_[1,0],self.gradu_[0,0]+self.u_[0]/self.x_[0]])
@@ -93,18 +94,24 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         Calculate load matrix R
         """
         r = self.x_[0]
-        re = self.dN_[1,inod]*self.gradu_[1,0]
-        re += (self.N_[inod]/r+self.dN_[0,inod])*\
-        (self.u_[0]/r+self.gradu_[0,0])
-        re /= self.material.mu0
+        re = 0.0
+#        re = self.dN_[1,inod]*self.gradu_[1,0]
+#        re += (self.N_[inod]/r+self.dN_[0,inod])*\
+#        (self.u_[0]/r+self.gradu_[0,0])
+#        re /= self.material.mu0
         if self.material.hysteresis:
             re += self.material.Mu[0]*self.dN_[1,inod]
             re -= self.material.Mu[1]*(self.N_[inod]/r+self.dN_[0,inod])
-        if self.timeOrder > 0:
-            re += self.N_[inod]*self.v_[0]*self.material.sigma
-        if self.timeOrder == 2:
-            re += self.N_[inod]*self.a_[0]*self.material.eps
-        re -= self.N_[inod]*self.getBodyLoad(t)
+#        if self.timeOrder > 0:
+#            re += self.N_[inod]*self.v_[0]*self.material.sigma
+#        if self.timeOrder == 2:
+#            re += self.N_[inod]*self.a_[0]*self.material.eps
+#        re -= self.N_[inod]*self.getBodyLoad(t)
+#        re *= self.getFactor()
+        R[0] += re
+        
+    def calculateRe(self, R, inod, t):
+        re = -self.N_[inod]*self.getBodyLoad(t)
         re *= self.getFactor()
         R[0] += re
 

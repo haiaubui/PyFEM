@@ -283,6 +283,7 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
         for self.istep in range(1,self.numberSteps+1):
             print("Time step "+str(self.istep))
             self.generateExternalLoad()
+            self.calculateExternalBodyLoad()
             # loop over iterations
             for iiter in range(self.Niter):
                 self.NewmarkApproximation(vn1,an1)

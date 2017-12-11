@@ -98,20 +98,20 @@ class AxisymmetricStaticBoundary(FB.StandardStaticBoundary):
         K[1,1] = self.N_[i]*element.Nx_[j]*self.G
         K[1,1] *= wfac*wfact
         
-    def subCalculateR(self, R, element, i):
-        #if np.allclose(element.xx_[0],0.0,rtol = 1.0e-14):
-        #    return
-        wfac = self.getFactor()
-        wfact = element.getFactorX(element.detJ)
-        wfacx = element.getFactorXR(element.detJ)
-        r0 = self.N_[i]*element.ux_[0]*\
-        (element.normv[0]*self.gradG[0]+element.normv[1]*self.gradG[1])
-        r0 *= wfac*wfacx
-        r0 += self.N_[i]*element.ux_[0]*self.G*\
-        element.normv[0]*wfac*wfact/element.xx_[0]
-        r1 = self.N_[i]*element.ux_[1]*self.G
-        r1 *= wfac*wfact
-        R[1] += (r0 + r1)
+#    def subCalculateR(self, R, element, i):
+#        #if np.allclose(element.xx_[0],0.0,rtol = 1.0e-14):
+#        #    return
+#        wfac = self.getFactor()
+#        wfact = element.getFactorX(element.detJ)
+#        wfacx = element.getFactorXR(element.detJ)
+#        r0 = self.N_[i]*element.ux_[0]*\
+#        (element.normv[0]*self.gradG[0]+element.normv[1]*self.gradG[1])
+#        r0 *= wfac*wfacx
+#        r0 += self.N_[i]*element.ux_[0]*self.G*\
+#        element.normv[0]*wfac*wfact/element.xx_[0]
+#        r1 = self.N_[i]*element.ux_[1]*self.G
+#        r1 *= wfac*wfact
+#        R[1] += (r0 + r1)
                 
         
 class DimensionMismatch(Exception):
