@@ -7,6 +7,7 @@ Created on Sun Nov 12 17:52:32 2017
 
 import sys
 import numpy as np
+import FEMMesh as fm
 
 class FEMOutput(object):
     """
@@ -113,8 +114,9 @@ class StandardFileOutput(FileOutput):
             if data.getTimeOrder() == 2:
                 self.writeA(node)
             self.file.write('\n')
-            
-    def readHeader(self, file):
+    
+    @staticmethod    
+    def readHeader(file):
         hdr = file.readline()
         ex = Exception('The file is corrupted or false formatted!')
         if hdr == '':
@@ -129,7 +131,7 @@ class StandardFileOutput(FileOutput):
         if hdr[2] != 'TIME':
             raise ex
         try:
-            t = int(hdr[3])
+            t = float(hdr[3])
         except:
             raise ex
         if hdr[4] != 'ORDER':
@@ -141,16 +143,23 @@ class StandardFileOutput(FileOutput):
             
         return Nnod, t, torder
             
+    @staticmethod
     def __readNodes(file, node, val, Nnod):
         res = []
         allnode = True and isinstance(node, str)
+        somenode = not allnode and isinstance(node, (tuple, list))
         
         for i in range(Nnod):            
             line = file.readline()
             if line is None:
                 raise EOFError
-            if not allnode and node != i:
-                continue
+            if not allnode:
+                if not somenode:
+                    if node != i:
+                        continue
+                else:
+                    if i not in node:
+                        continue
             line = line.split()
             Ndof = int(line[0])
             try:
@@ -167,17 +176,20 @@ class StandardFileOutput(FileOutput):
                     a = list(float(x) for x in line[4+Ndof*2:4+Ndof*3])
                     res.append(a)
                 else:
+                    file.close()
                     raise Exception('Cannot read '+val+' in this file')
             except IndexError:
+                file.close()
                 raise Exception('Cannot read '+val+' in this file')
         return np.array(res)       
             
-    def readOutput(file, timeStep = 0, node = 'all', val = 'u'):
+    @staticmethod        
+    def readOutput(filen, timeStep = 0, node = 'all', val = 'u'):
         """
         This function read the ouput file that was produced by 
         this output class
         Input:
-            file: file instance of output file
+            filen: name of output file
             timeStep:
                 scalar: read the specific time step
                 list, tuple: read the time steps in list or tuple
@@ -194,28 +206,79 @@ class StandardFileOutput(FileOutput):
             specific time step: numpy array
             other cases: list of numpy array
         """
-        Nnod, ti, timeOrder = StandardFileOutput.readheader(file)
+        file = open(filen,'r')
+        Nnod, ti, timeOrder = StandardFileOutput.readHeader(file)
         assert not(isinstance(timeStep,str) and timeStep != 'all'),\
         'unknown option '+ str(timeStep)
             
         alltime = True and timeStep == 'all'
-        res = []    
+        res = []
         if not alltime:
             if isinstance(timeStep,(list,tuple)):
+                rest = []
                 for i in timeStep:
-                    res.append(StandardFileOutput.readOutput(file,i,node,val))
-                return res
+                    a,t = StandardFileOutput.readOutput(filen,i,node,val)
+                    res.append(a)
+                    rest.append(t)
+                file.close()
+                return res,rest
             else:        
                 gotoLine(file, (Nnod+1)*timeStep)
-                StandardFileOutput.readheader(file) 
-                return StandardFileOutput.__readNodes(file,node,val,Nnod)
+                _,t,_ = StandardFileOutput.readHeader(file)
+                return StandardFileOutput.__readNodes(file,node,val,Nnod),t
         try:
+            rest = []
             file.seek(0)
             while 1:
-               StandardFileOutput.readheader(file) 
+               _,t,_ = StandardFileOutput.readHeader(file)
+               rest.append(t)
                res.append(StandardFileOutput.__readNodes(file,node,val,Nnod))
         except EOFError:
-            return res
+            file.close()
+            return res,rest
+            
+    def updateToMesh(self, mesh, istep = 0):
+        """
+        update output data to mesh at a specific time step
+        """
+        resu,_ = StandardFileOutput.readOutput(self.outfile,istep)
+        try:
+            resv,_ = StandardFileOutput.readOutput(self.outfile,istep,val='v')
+        except:
+            resv = None
+        try:
+            resa,_ = StandardFileOutput.readOutput(self.outfile,istep,val='a')
+        except:
+            resa = None
+        nodes = mesh.getNodes()
+        for i,n in enumerate(nodes):
+            n.setU(resu[i])
+        if resv is not None:
+            for i,n in enumerate(nodes):
+                n.setV(resv[i])
+        if resa is not None:
+            for i,n in enumerate(nodes):
+                n.setA(resa[i])
+    
+    def getValueInElement(self, mesh, e, x, isteps = 0, val='u'):
+        """
+        get output value at position x(natural coordinate) in element e of mesh
+        """
+        IT = fm.get_connection(mesh,e)
+        try:
+            resuu = []
+            for i in isteps:
+                resu,tout =StandardFileOutput.readOutput(self.outfile,i,IT,val)
+                for j,n in enumerate(e.getNodes()):
+                    n.setU(resu[i][j])
+                resuu.append(e.values_at(x,val))
+            return resuu
+        except:
+            resu,tout =StandardFileOutput.readOutput(self.outfile,i,IT,val)
+            for j,n in enumerate(e.getNodes()):
+                n.setU(resu[i][j])
+            return e.values_at(x,val)
+                
             
 
 def gotoLine(file, lineno):

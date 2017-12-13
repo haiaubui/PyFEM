@@ -170,6 +170,7 @@ class Algorithm(object):
         Calculate external point load and 
         nonhomogeneous Dirichlet boundary conditions
         """
+        self.Re.fill(0.0)
         for node in self.mesh.getNodes():
             node.addLoadTo(self.Re)
             if self.NonhomogeneousDirichlet:

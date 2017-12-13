@@ -5,6 +5,12 @@ Created on Fri Nov 10 18:25:38 2017
 @author: haiau
 """
 
+import numpy as np
+import pylab as pl
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Polygon as PlotPoly
+from matplotlib.colors import Normalize
+
 class Mesh(object):
     """
     Mesh for finite element method
@@ -141,6 +147,60 @@ class Mesh(object):
         
         self.Neq = cntu
         self.NeqD = -cntd - 1
+        
+    def plot(self, fig = None, col = '-b', fill_mat = False, e_number = False,\
+    n_number = False):
+        """
+        plot the mesh
+        """
+        patches = []
+        colors = []
+        max_mat = 0
+        for i,e in enumerate(self.Elements):
+            if e_number:
+                fig,nodes = e.plot(fig, col, number = i)
+            else:
+                fig,nodes = e.plot(fig, col)
+            if fill_mat:
+                verts = [n.getX() for n in nodes]
+                patches.append(PlotPoly(verts,closed=True))
+                m_id = e.getMaterial().getID()
+                colors.append(m_id)
+                if m_id > max_mat:
+                    max_mat = m_id
+        
+        if n_number:
+            for i,node in enumerate(self.Nodes):
+                pl.text(node.getX()[0],node.getX()[1],str(i))        
+                
+        if fill_mat:
+            collection = PatchCollection(patches)
+            jet = pl.get_cmap('jet')
+            cNorm  = Normalize(vmin=0, vmax=max_mat)
+            collection.set_color(jet(cNorm(colors)))
+            ax = fig.add_subplot(111)
+            collection.set_array(np.array(colors))
+            ax.add_collection(collection)
+            fig.colorbar(collection, ax = ax)
+            
+        pl.gca().set_aspect('equal', adjustable='box')
+        return fig
+        
+    def findNodeNear(self, x):
+        """
+        find the nearest node to coordinate x
+        """
+        if self.Nodes is None:
+            return None, -1
+        min_dist = 1.0e15
+        min_i = -1
+        for i,n in enumerate(self.Nodes):
+            dist = np.linalg.norm(n.getX()-x)
+            if dist < min_dist:
+                min_dist = dist
+                min_i = i
+                
+        return self.Nodes[min_i], min_i
 
     
 class MeshWithBoundaryElement(Mesh):
@@ -185,6 +245,35 @@ class MeshWithBoundaryElement(Mesh):
         return number of boundary elements
         """
         return self.NBe
+
+def get_connections(mesh):
+    """
+    Get connections of elements.
+    Return a list of length Ne, each member of list is a list of node position
+    in mesh.Nodes list.
+    """
+    IT = []
+    nodes = mesh.Nodes
+    for e in mesh.Elements:
+        IT.append([])
+        for n in e.Nodes:
+            for i in range(mesh.Nnod):
+                if n == nodes[i]:
+                    IT[-1].append(i+1)
+                    
+    return IT
+
+def get_connection(mesh, e):
+    """
+    get connection of element e
+    """
+    nodes = mesh.Nodes
+    IT = []
+    for n in e.Nodes:
+        for i in range(mesh.Nnod):
+            if n == nodes[i]:
+                IT.append(i+1)
+    return IT
 
 class EmptyMesh(Exception):
     """

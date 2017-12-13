@@ -247,6 +247,16 @@ class Element(object):
                 gradu += self.__temp_grad_u
         except TypeError:
             raise ElementBasisFunctionNotCalculated
+            
+    def getGradUP(self, gradu, dN_ = None):
+        if dN_ is None:
+            dN_ = self.dN_
+            
+        gradu.fill(0.0)
+        for i in range(self.Nnod):
+            np.outer(dN_[:,i:i+1],\
+            self.Nodes[i].getU().toNumpy(),self.__temp_grad_u)
+            gradu += self.__temp_grad_u
     
     def getV(self, u, N_ = None):
         """
@@ -360,12 +370,22 @@ class Element(object):
         """
         self.material = mat
         
+    def getMaterial(self):
+        return self.material
+        
     def calculate(self, data):
         """
         Calculate element matrices and vectors
         This method will be implemented in derived classes
         Input:
             data: a class that have methods return global matrices and vectors
+        """
+        pass
+    
+    def plot(self, fig = None, col = '-xb'):
+        """
+        Plot the element
+        This method must be overriden by derived classes
         """
         pass
 # End of Element class definition
@@ -584,6 +604,38 @@ class StandardElement(Element):
         """
         return self.nodeOrder
         
+    def values_at(self, x, val = 'u'):
+        """
+        Return u, v, a, gradu at position x (in natural coordinates)
+        """
+        assert x <= 1.0 + 1.0e-14 and x >= -1.0 - 1.0e-14, 'out of element'
+        N_ = np.zeros(self.Nnod,self.dtype)
+        dN_ = np.zeros((self.Ndim,self.Nnod),self.dtype)
+        self.basisND(x,N_,dN_)
+        if val == 'u':
+            u_ = np.zeros(self.Ndof,self.dtype)
+            self.getU(u_)
+            return u_
+        if val == 'gradu':
+            gradu = np.zeros(self.Ndof,self.dtype)
+            self.getGradUP(gradu)
+            return gradu
+        if val == 'v':
+            if self.timeOrder > 0:
+                v_ = np.zeros(self.Ndof,self.dtype)
+                self.getV(v_)
+                return v_
+            else:
+                raise Exception('No velocity')
+        if val == 'a':
+            if self.timeOrder > 0:
+                a_ = np.zeros(self.Ndof,self.dtype)
+                self.getV(a_)
+                return a_
+            else:
+                raise Exception('No acceleration')
+        
+        
     def initializeMatrices(self):
         self.R.fill(0.0)
         self.K.fill(0.0)
@@ -724,7 +776,7 @@ class StandardElement(Element):
                 
                 # loop over node j
                 try:
-                    self.calculateK(K[i][j],i,0,t)
+                    self.calculateK(K[i][0],i,0,t)
                     #assembleMatrix(kGlob,kGlobD,K,\
                     #self.Nodes[i],self.Nodes[0])
                     for j in range(1,self.Nnod):
@@ -735,7 +787,7 @@ class StandardElement(Element):
                 except AttributeError:
                     pass
                 try:
-                    self.calculateD(D[i][j],i,0,t)
+                    self.calculateD(D[i][0],i,0,t)
                     #assembleMatrix(dGlob,dGlobD,D,\
                     #self.Nodes[i],self.Nodes[0])
                     for j in range(1,self.Nnod):
@@ -745,7 +797,7 @@ class StandardElement(Element):
                 except (AttributeError, TypeError):
                     pass
                 try:
-                    self.calculateM(M[i][j],i,0,t)
+                    self.calculateM(M[i][0],i,0,t)
                     #assembleMatrix(mGlob,mGlobD,M,\
                     #self.Nodes[i],self.Nodes[0])                        
                     for j in range(1,self.Nnod):

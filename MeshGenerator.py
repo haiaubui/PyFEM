@@ -326,6 +326,8 @@ class Polygon(object):
             self.nodeOrder = [i for i in range(self.Nnod)]
             self.arrangeNodes()
             
+        self.clw = clockwise(self.Nodes)
+            
         # material of polygon
         self.material = None
         
@@ -365,6 +367,12 @@ class Polygon(object):
         for i in range(self.Nnod))
             
         return all(a)
+        
+    def isClockwise(self):
+        """
+        return True if nodes are ordering clocwise
+        """
+        return self.clw > 0
         
     def setMaterial(self, material):
         """
@@ -1150,6 +1158,10 @@ def nodesQuad9(quad):
         return None
     
     quadnod = quad.getNodes()
+    if not quad.isClockwise():
+        quadnod = quad.getNodes()
+    else:
+        quadnod = list(reversed(quad.getNodes()))
     assert quad is not None, 'No node in quadrilateral'
     nodes = [quadnod[0]]
     nodes.append(nodes[0].copyToPosition(\
@@ -1209,6 +1221,47 @@ def centroidPolygon(poly):
     for i in range(Nnod))
     return np.array([sum(cx)/signedA,sum(cy)/signedA])
 
+
+def clockwise(nodes):
+    """
+    Check if a list of nodes is clockwise ordered
+    Return 1 for clockwise order
+          -1 for anti-clockwise order
+    Raise NonConvex for neither case is valid
+    """
+    nn = len(nodes)
+    assert all(n.getX().size == 2 for n in nodes),'only for 2 dimensional case'
+    for i in range(0,nn-1):
+        a,b,c = straightLineEquation(nodes[i],nodes[(i+2)%nn])
+        if a < 0.0:
+            a = -a
+            b = -b
+            c = -c
+        x1 = nodes[i+1].getX()
+        x2 = nodes[(i+3)%nn].getX()
+        x3 = nodes[(i+2)%nn].getX()-nodes[i].getX() 
+        a1 = a*x1[0] + b*x1[1] + c
+        a2 = a*x2[0] + b*x2[1] + c
+        if a1 > 0 and a2 < 0:
+            if np.all(x3 > 0) or (x3[0] <= 0 and x3[1] >= 0):
+                clw = -1
+            else:
+                clw = 1
+        elif a1 < 0 and a2 > 0:
+            if np.all(x3 > 0) or (x3[0] <= 0 and x3[1] >= 0):
+                clw = 1
+            else:
+                clw = -1
+        try:
+            if prevclw != clw:
+                raise NonConvex
+        except NameError:
+            prevclw = clw
+            
+    return prevclw
+
+class NonConvex(Exception):
+    pass
         
 class NotIntersect(Exception):
     pass

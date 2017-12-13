@@ -79,23 +79,27 @@ class JAMaterial(mat.Material):
         math.pow((1-t0),2.4926461785971135e-1)
         
     def calculateOne(self,data,b,ix):
-        if self.Ndof > 1:
+        try:
             T = data.getU()[1]
-        else:
+        except:
             T = 298.0
         self.calculateParameters(T)
+        try:
+            ig = data.ig
+        except:
+            ig = 0
         if T>=1.02407149938785e3:
-            self.Mu[ix,data.ig] = 0.0
-            self.dM[ix,data.ig] = 0.0
+            self.Mu[ix,ig] = 0.0
+            self.dM[ix,ig] = 0.0
             return
             
         nstep = 400
         try:
-            Bprev = self.Bprev[ix,data.ig]
+            Bprev = self.Bprev[ix,ig]
         except IndexError:
             print(ix,data.ig)
-        Hprev = self.Hprev[ix,data.ig]
-        Mprev = self.Mprev[ix,data.ig]
+        Hprev = self.Hprev[ix,ig]
+        Mprev = self.Mprev[ix,ig]
         if(b < Bprev):
             self.delta = -1
         else:
@@ -110,11 +114,15 @@ class JAMaterial(mat.Material):
             for i in range(nstep):
                 he = h + self.alpha*mu1
                 man = self.Ms*Langevin(he/self.a)
-                dman = self.Ms/self.a*dLangevin(he/self.a)
-                dman = dman/(1-self.alpha*dman)
+                try:
+                    dman = self.Ms/self.a*dLangevin(he/self.a)
+                except:
+                    print(Bprev,Hprev,barr,h,b,mu1,self.dMprev,he/self.a)
+                    raise
+                dman = dman/(1.0-self.alpha*dman)
                 c1 = 1.0/(1.0+self.c)
                 dmu1 = c1*(man-mu1)/(self.delta*self.k-\
-                self.alpha*(man-mu1)+self.c*c1*dman)
+                self.alpha*(man-mu1))+self.c*c1*dman
                 if dmu1 <0:
                     dmu1 = -dmu1
                 dmu1 = dmu1/(self.mu0*(1.0+dmu1))
@@ -126,17 +134,29 @@ class JAMaterial(mat.Material):
                 self.dM[ix] = dmu1
         else:
             self.Mu[ix] = Mprev
-            self.dM[ix] = self.dMprev[ix,data.ig]
-        if data.store:
-            self.Bprev[ix,data.ig] = b
-            self.Hprev[ix,data.ig] = h
-            self.Mprev[ix,data.ig] = self.Mu[ix]
-            self.dMprev[ix,data.ig] = self.dM[ix]
+            self.dM[ix] = self.dMprev[ix,ig]
+            
+        try:
+            if data.store:
+                self.Bprev[ix,ig] = b
+                self.Hprev[ix,ig] = h
+                self.Mprev[ix,ig] = self.Mu[ix]
+                self.dMprev[ix,ig] = self.dM[ix]
+        except AttributeError:
+            self.Bprev[ix,ig] = b
+            self.Hprev[ix,ig] = h
+            self.Mprev[ix,ig] = self.Mu[ix]
+            self.dMprev[ix,ig] = self.dM[ix]
+            
+        return self.Mu[ix]
             
     def calculate(self,data):
         B = data.getB()
         self.calculateOne(data,B[0],0)
         self.calculateOne(data,B[1],1)
+        
+    def calculateX(self, b):
+        return self.calculateOne(None,b,0)
         
 def Langevin(x):
     n = 8
@@ -182,16 +202,23 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         K[0,0] += self.N_[inod]*self.N_[jnod]/(r*r)
         K[0,0] += self.dN_[1,inod]*self.dN_[1,jnod]
         K[0,0] /= self.material.mu0
+        K[0,0] *= self.getFactor()
+        
+    def calculateK(self, K, inod, jnod, t):
+        r = self.x_[0]
         # magnetization
         if self.material.hysteresis:
+            dNs = self.dN_
+            Ns = self.N_
             dm1 = self.material.dM[0]
             dm2 = self.material.dM[1]
-            K[0,0] -= dm2*self.dN_[0,inod]*self.dN_[0,jnod]
-            K[0,0] -= dm2*self.N_[inod]*self.dN_[0,jnod]/r
-            K[0,0] -= dm2*self.dN_[0,inod]*self.N_[jnod]/r
-            K[0,0] -= dm2*self.N_[inod]*self.N_[jnod]/(r*r)
-            K[0,0] -= dm1*self.dN_[1,inod]*self.dN_[1,jnod]
-        K[0,0] *= self.getFactor()
+            ke = dm2*dNs[0][inod]*dNs[0][jnod];
+            ke += dm2*Ns[inod]*dNs[0][jnod]/r;
+            ke += dm2*dNs[0][inod]*Ns[jnod]/r;
+            ke += dm2*Ns[inod]*Ns[jnod]/(r*r);
+            ke += dm1*dNs[1][inod]*dNs[1][jnod];
+            ke *= self.getFactor()
+            K[0,0] -= ke
     
     def calculateDLinear(self, D, inod, jnod, t):
         """
@@ -213,23 +240,45 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         """
         r = self.x_[0]
         re = 0.0
-#        re = self.dN_[1,inod]*self.gradu_[1,0]
-#        re += (self.N_[inod]/r+self.dN_[0,inod])*\
-#        (self.u_[0]/r+self.gradu_[0,0])
-#        re /= self.material.mu0
         if self.material.hysteresis:
             re += self.material.Mu[0]*self.dN_[1,inod]
             re -= self.material.Mu[1]*(self.N_[inod]/r+self.dN_[0,inod])
-#        if self.timeOrder > 0:
-#            re += self.N_[inod]*self.v_[0]*self.material.sigma
-#        if self.timeOrder == 2:
-#            re += self.N_[inod]*self.a_[0]*self.material.eps
         R[0] += re
         
     def calculateRe(self, R, inod, t):
         re = -self.N_[inod]*self.getBodyLoad(t)
         re *= self.getFactor()
-        R[0] += re
+        R[0] = re
+        
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+        if fig is None:
+            fig = pl.figure()
+        
+        X1 = self.Nodes[0].getX()
+        X2 = self.Nodes[2].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[2].getX()
+        X2 = self.Nodes[8].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[8].getX()
+        X2 = self.Nodes[6].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[6].getX()
+        X2 = self.Nodes[0].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        nodes = self.Nodes
+        for n in nodes:
+            pl.plot(n.getX()[0],n.getX()[1],'.b')
+        
+        if number is not None:
+            c = 0.5*(nodes[2].getX()+nodes[6].getX())
+            pl.text(c[0],c[1],str(number))
+        
+        return fig, [nodes[0],nodes[2],nodes[8],nodes[6]]
 
 def readInput(filename,nodeOrder,timeOrder,intData,Ndof = 1):
     mesh = FM.Mesh()
@@ -269,6 +318,7 @@ def readInput(filename,nodeOrder,timeOrder,intData,Ndof = 1):
     air = LinearMagneticMaterial(1.0,1.0,0.0,2)
     cooper = LinearMagneticMaterial(1.0,1.0,5.0e6,3)
     steel = LinearMagneticMaterial(100.0,1.0,5.0e6,1)
+    #steel = JAMaterial(5.0e6,9,1)
     file.readline()
     for i in range(nelm):
         a = list(int(x) for x in file.readline().split())
@@ -278,6 +328,7 @@ def readInput(filename,nodeOrder,timeOrder,intData,Ndof = 1):
             mesh.getElements()[i].updateMat(cooper)
         if a[1] == 1:
             mesh.getElements()[i].updateMat(steel)
+            #mesh.getElements()[i].setLinearity(False)
             #mesh.getElements()[i].updateMat(JAMaterial(5.0e6,intData.getNumberPoint(),1))
     file.close()
     return mesh
@@ -293,17 +344,18 @@ def findNode(nodes,id_number):
 Ndof = 1             
 tOrder = 2
 Ng = [3,3]
-totalTime = 1.0e-5
-numberTimeSteps = 10
+totalTime = 1.0e-3
+numberTimeSteps = 100
 rho_inf = 0.9
 tol = 1.0e-8
-load = 355.0/0.015/0.01
+#load = 355.0/0.015/0.01
+load = 355.0
 
 intDat = idat.GaussianQuadrature(Ng, 2, idat.Gaussian1D)
 
-#nodeOrder = [[2,1,0,2,1,0,2,1,0],
-#             [2,2,2,1,1,1,0,0,0]]
-#
+nodeOrder = [[2,1,0,2,1,0,2,1,0],
+             [2,2,2,1,1,1,0,0,0]]
+
 #mesh = readInput('/home/haiau/Documents/testfortran_.dat',nodeOrder,tOrder,intDat)
 #for e in mesh.getElements():
 #    if e.material.getID() == 3:
@@ -311,61 +363,65 @@ intDat = idat.GaussianQuadrature(Ng, 2, idat.Gaussian1D)
 #                return load*math.cos(8.1e3*2*np.pi*t)
 #        e.setBodyLoad(loadfunc)
 
+def loadfunc(x,t):
+    return load*math.cos(8.1e3*2*np.pi*t)
+
 def create_mesh():
     nodes = []
-    nodes.append(FN.Node([0.0,-0.2],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.015,-0.2],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.0225,-0.2],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.0325,-0.2],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.2,-0.2],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0,0.0],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.015,0.0],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0225,0.0],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0325,0.0],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.2,0.0],Ndof,timeOrder = tOrder))
     
     edges = [mg.Edge(nodes[i],nodes[i+1]) for i in range(len(nodes)-1)]
     
     geo = mg.Geometry()
     d = np.array([0.0,1.0])
-    s = [0.1,0.064,0.015,0.0135,0.015,0.0135,0.015,0.064,0.1]
+    s = [0.1,0.05,0.014,0.015,0.0135,0.015,0.0135,0.015,0.014,0.05,0.1]
+    #s = [0.1,0.064,0.015,0.0135,0.015,0.0135,0.015,0.064,0.1]
     for e in edges:
         geo.addPolygons(e.extendToQuad(d,s))
     
     polys = geo.getPolygons()
-    for i in range(9):
-        polys[i].setDivisionEdge13(8)
+    for i in range(11):
+        polys[i].setDivisionEdge13(4)
         
-    for i in range(9,18):
+    for i in range(11,22):
         polys[i].setDivisionEdge13(2)
         
-    for i in range(27,36):
+    for i in range(33,44):
         polys[i].setDivisionEdge13(5)
         
-    for i in range(0,28,9):
+    for i in range(0,34,11):
         polys[i].setDivisionEdge24(4)
         
-    for i in range(8,36,9):
-        polys[i].setDivisionEdge24(4)
-        
-    for i in range(1,29,9):
+    for i in range(1,35,11):
         polys[i].setDivisionEdge24(2)
         
-    for i in range(7,35,9):
+    for i in range(9,43,11):
+        polys[i].setDivisionEdge24(2)
+        
+    for i in range(10,44,11):
         polys[i].setDivisionEdge24(4)
         
-    mat2 = LinearMagneticMaterial(1.0,0.0,0.0,2)
-    mat3 = LinearMagneticMaterial(1.0,0.0,0.0,3)
-    #mat1 = JAMaterial(5.0e6,9,1)
-    mat1 = LinearMagneticMaterial(100.0,1.0,0.0,1)
-    for i in range(1,8):
+    mat3 = LinearMagneticMaterial(1.0,1.0,5.0e6,3)
+    mat2 = LinearMagneticMaterial(1.0,1.0,0.0,2)
+    mat1 = JAMaterial(5.0e6,9,1)
+    #mat1 = LinearMagneticMaterial(100.0,1.0,5.0e6,1)
+    for i in range(1,10):
         polys[i].setMaterial(mat1)
         
-    polys[20].setMaterial(mat2)
-    polys[20].setBodyLoad(load)
-    polys[22].setMaterial(mat2)
-    polys[22].setBodyLoad(load)
-    polys[24].setMaterial(mat2)
-    polys[24].setBodyLoad(load)
+    polys[25].setMaterial(mat3)
+    polys[25].setBodyLoad(load)
+    polys[27].setMaterial(mat3)
+    polys[27].setBodyLoad(load)
+    polys[29].setMaterial(mat3)
+    polys[29].setBodyLoad(load)
     
     for poly in polys:
         if poly.getMaterial() is None:
-            poly.setMaterial(mat3)
+            poly.setMaterial(mat2)
         
     geo.mesh()
     
@@ -373,17 +429,17 @@ def create_mesh():
         
     #fig = geo.plot(poly_number = True, fill_mat = True)
         
-    #geo.plotMesh(col = 'b-',fill_mat = True)
-    #for i,node in enumerate(nodesx):
-    #    #pl.plot(node.getX()[0],node.getX()[1],'.b')
-    #    if math.fabs(node.getX()[0] - 0.0)<1.0e-14:
-    #        pl.text(node.getX()[0],node.getX()[1],str(i))
+#    geo.plotMesh(col = 'b-',fill_mat = True)
+#    for i,node in enumerate(nodesx):
+#        pl.plot(node.getX()[0],node.getX()[1],'.b')
+#        if math.fabs(node.getX()[0] - 0.015)<1.0e-14:
+#            pl.text(node.getX()[0],node.getX()[1],str(i))
        
     for n in nodesx:
         if math.fabs(n.getX()[0]-0.0)<1.0e-14 or \
-        math.fabs(n.getX()[1]+0.2)<1.0e-14 or \
+        math.fabs(n.getX()[1]-0.0)<1.0e-14 or \
         math.fabs(n.getX()[0]-0.2)<1.0e-14 or \
-        math.fabs(n.getX()[1]-0.2)<1.0e-14:
+        math.fabs(n.getX()[1]-0.4)<1.0e-14:
             n.setConstraint(False, 0.0, 0)
             #n.setConstraint(False, 0.0, 1)
             #pl.plot(n.getX()[0],n.getX()[1],'.r')
@@ -397,13 +453,14 @@ def create_mesh():
         m = mats[i]
         elements.append(AxiSymMagnetic(e,[2,2],QE.LagrangeBasis1D,\
         QE.generateQuadNodeOrder([2,2],2),m,intDat))
-        if bdls[i] is not None:
-            def loadfunc(x,t):
-                return load*math.cos(8.1e3*2*np.pi*t)
-                #return load
-        else:
-            loadfunc = None
-        elements[i].setBodyLoad(loadfunc)
+        #elements.append(AxiSymMagnetic(e,[2,2],QE.LagrangeBasis1D,\
+        #nodeOrder,m,intDat))
+        if m.getID() == 1:
+            elements[-1].setLinearity(False)
+        #if bdls[i] is not None:
+        if elements[-1].material.getID() == 3:
+            elements[-1].setBodyLoad(loadfunc)
+        
         
     mesh =  FM.Mesh()
     mesh.addNodes(nodesx)
@@ -422,7 +479,7 @@ def create_simple_mesh():
     geo = mg.Geometry()
     geo.addPolygon(poly)
     
-    mat2 = LinearMagneticMaterial(1.0,0.0,0.0,2)
+    mat2 = LinearMagneticMaterial(100.0,1.0,5.0e6,2)
     poly.setMaterial(mat2)
     
     geo.mesh()
@@ -448,9 +505,24 @@ def create_simple_mesh():
     
     return mesh
         
+
+    
 #mesh = create_simple_mesh()
+        
+#matx = JAMaterial(0.0,1,1)
+#btest1 = [0.02*i for i in range(100)]+[0.02*i for i in range(100,-1,-1)]
+#btest = np.array(btest1)
+#mtest = np.array([matx.calculateX(b) for b in btest])
+#pl.plot((btest/(np.pi*4.0e-7)-mtest),mtest)
 
 mesh = create_mesh()
+
+#cnt = 0
+#for e in mesh.Elements:
+#    if e.bodyLoad is not None:
+#        cnt += 1
+
+#mesh.plot(fill_mat = True)
 
 mesh.generateID()      
 
@@ -464,3 +536,7 @@ cProfile.run('alg.calculate()','calculate.profile')
 stats = pstats.Stats('calculate.profile')
 stats.strip_dirs().sort_stats('time').print_stats()
 
+
+_,inod = mesh.findNodeNear(np.array([0.015,0.2]))
+testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
+testout = [t[0][0] for t in testout]

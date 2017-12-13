@@ -312,6 +312,20 @@ class injectArray(object):
             return res.tolist()
         return []
         
+    def toNumpy(self):
+        if self.ndim == 1:
+            return np.array([self.data[i][0] for i in range(self.size)])
+        elif self.ndim == 2:
+            res = np.empty(self.size,self.dtype)
+            it =np.nditer(self.data,flags=['refs_ok','multi_index'])
+            while not it.finished:
+                id1 = it.multi_index[0]
+                id2 = it.multi_index[1]
+                res[id1,id2] = self.data[id1,id2][0]
+                it.iternext()
+            return res
+        return None
+        
 def zeros(size, dtype = 'float64'):
     """
     Create a injection array with all member set to zero

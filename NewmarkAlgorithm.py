@@ -70,6 +70,7 @@ class GeneralizedAlphaAlgorithm(FA.DynamicAlgorithm):
         """
         generate external load
         """
+        self.Re.fill(0.0)
         if not self.time_depend_load and self.istep > 0:
             return
         if self.point_load:
