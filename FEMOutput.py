@@ -8,6 +8,7 @@ Created on Sun Nov 12 17:52:32 2017
 import sys
 import numpy as np
 import FEMMesh as fm
+import warnings
 
 class FEMOutput(object):
     """
@@ -65,6 +66,18 @@ class StandardFileOutput(FileOutput):
     if data.getTimeOrder() == 0, there is no V and A
                               1,             A                         
     """
+    def chooseSteps(self, steps = 'all'):
+        """
+        Choose time steps to be output
+        steps = 'all' : output all steps
+        otherwise: output all in list, iterator, generator steps
+        """
+        if steps == 'all':
+            self.allsteps = True
+        else:
+            self.allsteps = False
+            self.steps = steps
+            
     def writeX(self, node):
         self.file.write(str(node.getX()[0])+' ')
         if node.getNdim() > 1:
@@ -100,6 +113,13 @@ class StandardFileOutput(FileOutput):
         """
         write data to output file
         """
+        try:
+            if not self.allsteps:
+                if data.getCurrentStep() not in self.steps:
+                    return
+        except:
+            self.allsteps = True
+                
         self.writeHeader(data)
         nodes = data.getMesh().getNodes()
         ndof = nodes[0].getNdof()
@@ -217,12 +237,16 @@ class StandardFileOutput(FileOutput):
             if isinstance(timeStep,(list,tuple)):
                 rest = []
                 for i in timeStep:
-                    a,t = StandardFileOutput.readOutput(filen,i,node,val)
-                    res.append(a)
-                    rest.append(t)
+                    try:
+                        a,t = StandardFileOutput.readOutput(filen,i,node,val)
+                        res.append(a)
+                        rest.append(t)
+                    except EOFError:
+                        warnings.warn('file ended before all steps were read')
+                        break
                 file.close()
                 return res,rest
-            else:        
+            else:
                 gotoLine(file, (Nnod+1)*timeStep)
                 _,t,_ = StandardFileOutput.readHeader(file)
                 return StandardFileOutput.__readNodes(file,node,val,Nnod),t

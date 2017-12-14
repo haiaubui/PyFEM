@@ -155,8 +155,8 @@ class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary):
 Ndof = 2             
 tOrder = 2
 Ng = [3,3]
-totalTime = 2.0
-numberTimeSteps = 2000
+totalTime = 1.0e-3
+numberTimeSteps = 100
 rho_inf = 0.9
 tol = 1.0e-8
 load = 355.0/0.015/0.01
@@ -318,7 +318,7 @@ def create_mesh():
         QE.generateQuadNodeOrder([2,2],2),m,intDat))
         if bdls[i] is not None:
             def loadfunc(x,t):
-                return load*math.sin(50.0*2*np.pi*t)
+                return load*math.cos(8.1e3*2*np.pi*t)
                 #return load
         else:
             loadfunc = None
@@ -450,8 +450,14 @@ mesh = create_mesh()
 #mesh = readInput('/home/haiau/Dropbox/Static_magnetic/testfortran_body.dat',\
 #nodeOrder,tOrder,intDat,2)
 
-#output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
-#alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
-#totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
-#
-#alg.calculate()
+output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
+alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
+totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+
+output.chooseSteps(range(0,100,2))
+
+alg.calculate()
+
+_,inod = mesh.findNodeNear(np.array([0.015,0.0]))
+testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
+testout = [t[0][0] for t in testout]
