@@ -95,25 +95,45 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         """
         r = self.x_[0]
         re = 0.0
-#        re = self.dN_[1,inod]*self.gradu_[1,0]
-#        re += (self.N_[inod]/r+self.dN_[0,inod])*\
-#        (self.u_[0]/r+self.gradu_[0,0])
-#        re /= self.material.mu0
         if self.material.hysteresis:
             re += self.material.Mu[0]*self.dN_[1,inod]
             re -= self.material.Mu[1]*(self.N_[inod]/r+self.dN_[0,inod])
-#        if self.timeOrder > 0:
-#            re += self.N_[inod]*self.v_[0]*self.material.sigma
-#        if self.timeOrder == 2:
-#            re += self.N_[inod]*self.a_[0]*self.material.eps
-#        re -= self.N_[inod]*self.getBodyLoad(t)
-#        re *= self.getFactor()
         R[0] += re
         
     def calculateRe(self, R, inod, t):
         re = -self.N_[inod]*self.getBodyLoad(t)
         re *= self.getFactor()
-        R[0] += re
+        R[0] = re
+        
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+        if fig is None:
+            fig = pl.figure()
+        
+        X1 = self.Nodes[0].getX()
+        X2 = self.Nodes[2].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[2].getX()
+        X2 = self.Nodes[8].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[8].getX()
+        X2 = self.Nodes[6].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[6].getX()
+        X2 = self.Nodes[0].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        nodes = self.Nodes
+        for n in nodes:
+            pl.plot(n.getX()[0],n.getX()[1],'.b')
+        
+        if number is not None:
+            c = 0.5*(nodes[2].getX()+nodes[6].getX())
+            pl.text(c[0],c[1],str(number))
+        
+        return fig, [nodes[0],nodes[2],nodes[8],nodes[6]]
 
 class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary):
     def calculateKLinear(self, K, i, j, t):
@@ -233,6 +253,108 @@ def findNode(nodes,id_number):
         if node.get_id_number() == id_number:
             return node
     raise Exception()
+    
+def create_mesh():
+    nodes = []
+    nodes.append(FN.Node([0.0,-0.1],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.015,-0.1],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0225,-0.036],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0325,-0.036],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0225,-0.0075],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0325,-0.0075],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0225,0.021],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0325,0.021],Ndof,timeOrder = tOrder))
+    
+    edges = []
+    edges.append(mg.Edge(nodes[0],nodes[1]))
+    edges.append(mg.Edge(nodes[2],nodes[3]))
+    edges.append(mg.Edge(nodes[4],nodes[5]))
+    edges.append(mg.Edge(nodes[6],nodes[7]))
+
+    geo = mg.Geometry()
+    d = np.array([0.0,1.0])
+    s = [0.05,0.014,0.015,0.0135,0.015,0.0135,0.015,0.014,0.05]
+    geo.addPolygons(edges[0].extendToQuad(d,s))
+    s = [0.2,0.015,0.015,0.015]
+    for i in range(1,len(edges)):
+        geo.addPolygons(edges[i].extendToQuad(d,s[i]))
+        
+    #fig = geo.plot(poly_number=True)
+        
+    polys = geo.getPolygons()
+    for i in range(9):
+        polys[i].setDivisionEdge13(4)
+    
+    polys[0].setDivisionEdge24(2)
+    polys[8].setDivisionEdge24(2)
+    
+    mat2 = LinearMagneticMaterial(1.0,1.0,5.0e6,2)
+    #mat1 = JAMaterial(5.0e6,9,1)
+    mat1 = LinearMagneticMaterial(100.0,1.0,5.0e6,1)
+    
+    for i in range(9):
+        polys[i].setMaterial(mat1)
+    polys[9].setMaterial(mat2)
+    polys[9].setBodyLoad(1.0)
+    polys[10].setMaterial(mat2)
+    polys[10].setBodyLoad(1.0)
+    polys[11].setMaterial(mat2)
+    polys[11].setBodyLoad(1.0)
+    
+    geo.mesh()
+    
+    #fig = geo.plotMesh(fill_mat = True)
+    
+    [nodesx, elems, mats, bdls] = geo.getMesh(None,mg.nodesQuad9,Ndof)
+    
+    for n in nodesx:
+        if math.fabs(n.getX()[0]-0.0)<1.0e-14:
+            n.setConstraint(False, 0.0, 0)
+            n.setConstraint(False, 0.0, 1)
+    elements = []
+    for i,e in enumerate(elems):
+        m = mats[i]
+        elements.append(AxiSymMagnetic(e,[2,2],QE.LagrangeBasis1D,\
+        QE.generateQuadNodeOrder([2,2],2),m,intDat))
+        if bdls[i] is not None:
+            def loadfunc(x,t):
+                return load*math.sin(50.0*2*np.pi*t)
+                #return load
+        else:
+            loadfunc = None
+        elements[i].setBodyLoad(loadfunc)
+        
+    mesh =  FM.MeshWithBoundaryElement()
+    mesh.addNodes(nodesx)
+    mesh.addElements(elements)
+    
+    geo.meshBoundary()
+    [nodes1, elems1, normBndVec] = geo.getBoundaryMesh(None,\
+    mg.nodesBoundaryQuad9,Ndof)
+    
+    elementBs = []
+    for i,e in enumerate(elems1):
+        elementBs.append(AxiSymMagneticBoundary(e,2,QE.LagrangeBasis1D,\
+        QE.generateQuadNodeOrder(2,1),intDatB,intSingDat,normBndVec[i],i))
+        elementBs[-1].setMaterial(mat1)
+        
+    for n in mesh.getNodes():
+        ine = False
+        for e in elementBs:
+            if n in e:
+                ine = True
+        if not ine:
+            n.setConstraint(False, 0.0, 1)
+        
+    #mesh.addElements(elementBs)
+    mesh.addBoundaryElements(elementBs)
+    mesh.generateID()
+
+    
+    #mesh.Nodes[4].setLoad(loadfunc,0)
+    
+    return mesh
+    
 
 def create_simple_mesh():
     nodes = []
@@ -320,14 +442,16 @@ def get_IT(mesh):
     return IT
     
 #mesh = create_simple_mesh()
+    
+mesh = create_mesh()
 
-nodeOrder = [[2,1,0,2,1,0,2,1,0],
-             [2,2,2,1,1,1,0,0,0]]
-mesh = readInput('/home/haiau/Dropbox/Static_magnetic/testfortran_body.dat',\
-nodeOrder,tOrder,intDat,2)
+#nodeOrder = [[2,1,0,2,1,0,2,1,0],
+#             [2,2,2,1,1,1,0,0,0]]
+#mesh = readInput('/home/haiau/Dropbox/Static_magnetic/testfortran_body.dat',\
+#nodeOrder,tOrder,intDat,2)
 
-output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
-alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
-totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
-
-alg.calculate()
+#output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
+#alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
+#totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+#
+#alg.calculate()

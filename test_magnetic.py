@@ -176,7 +176,7 @@ def dLangevin(x):
         a = math.sinh(x)
         return 1.0/(x*x)-1.0/(a*a)
     
-class AxiSymMagnetic(AE.AxisymmetricQuadElement):
+class AxiSymMagnetic(AE.AxisymmetricQuadElement, QE.Quad9Element):
     def __init__(self, Nodes, pd, basisFunction, nodeOrder,material, intData):
         AE.AxisymmetricQuadElement.__init__(self,Nodes,pd,basisFunction,\
         nodeOrder,material,intData)
@@ -249,36 +249,6 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         re = -self.N_[inod]*self.getBodyLoad(t)
         re *= self.getFactor()
         R[0] = re
-        
-    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
-        if fig is None:
-            fig = pl.figure()
-        
-        X1 = self.Nodes[0].getX()
-        X2 = self.Nodes[2].getX()
-        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
-        
-        X1 = self.Nodes[2].getX()
-        X2 = self.Nodes[8].getX()
-        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
-        
-        X1 = self.Nodes[8].getX()
-        X2 = self.Nodes[6].getX()
-        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
-        
-        X1 = self.Nodes[6].getX()
-        X2 = self.Nodes[0].getX()
-        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
-        
-        nodes = self.Nodes
-        for n in nodes:
-            pl.plot(n.getX()[0],n.getX()[1],'.b')
-        
-        if number is not None:
-            c = 0.5*(nodes[2].getX()+nodes[6].getX())
-            pl.text(c[0],c[1],str(number))
-        
-        return fig, [nodes[0],nodes[2],nodes[8],nodes[6]]
 
 def readInput(filename,nodeOrder,timeOrder,intData,Ndof = 1):
     mesh = FM.Mesh()
@@ -407,8 +377,8 @@ def create_mesh():
         
     mat3 = LinearMagneticMaterial(1.0,1.0,5.0e6,3)
     mat2 = LinearMagneticMaterial(1.0,1.0,0.0,2)
-    mat1 = JAMaterial(5.0e6,9,1)
-    #mat1 = LinearMagneticMaterial(100.0,1.0,5.0e6,1)
+    #mat1 = JAMaterial(5.0e6,9,1)
+    mat1 = LinearMagneticMaterial(100.0,1.0,5.0e6,1)
     for i in range(1,10):
         polys[i].setMaterial(mat1)
         
@@ -455,8 +425,8 @@ def create_mesh():
         QE.generateQuadNodeOrder([2,2],2),m,intDat))
         #elements.append(AxiSymMagnetic(e,[2,2],QE.LagrangeBasis1D,\
         #nodeOrder,m,intDat))
-        if m.getID() == 1:
-            elements[-1].setLinearity(False)
+        #if m.getID() == 1:
+        #    elements[-1].setLinearity(False)
         #if bdls[i] is not None:
         if elements[-1].material.getID() == 3:
             elements[-1].setBodyLoad(loadfunc)
@@ -526,17 +496,17 @@ mesh = create_mesh()
 
 mesh.generateID()      
 
-output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
-alg = NM.NonlinearNewmarkAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
-totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
-
-#alg.calculate()
-
-cProfile.run('alg.calculate()','calculate.profile')
-stats = pstats.Stats('calculate.profile')
-stats.strip_dirs().sort_stats('time').print_stats()
-
-
-_,inod = mesh.findNodeNear(np.array([0.015,0.2]))
-testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
-testout = [t[0][0] for t in testout]
+#output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
+#alg = NM.NonlinearNewmarkAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
+#totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+#
+##alg.calculate()
+#
+#cProfile.run('alg.calculate()','calculate.profile')
+#stats = pstats.Stats('calculate.profile')
+#stats.strip_dirs().sort_stats('time').print_stats()
+#
+#
+#_,inod = mesh.findNodeNear(np.array([0.015,0.2]))
+#testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
+#testout = [t[0][0] for t in testout]

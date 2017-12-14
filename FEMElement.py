@@ -6,6 +6,7 @@ Created on Fri Nov 10 11:40:01 2017
 """
 
 import numpy as np
+import pylab as pl
 #import scipy.linalg as la
 import injectionArray as ia
 
@@ -382,12 +383,7 @@ class Element(object):
         """
         pass
     
-    def plot(self, fig = None, col = '-xb'):
-        """
-        Plot the element
-        This method must be overriden by derived classes
-        """
-        pass
+
 # End of Element class definition
 
 class StandardElement(Element):
@@ -806,6 +802,31 @@ class StandardElement(Element):
                         #self.Nodes[i],self.Nodes[j])
                 except (AttributeError, TypeError):
                     pass
+                
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+        """
+        Default plot method
+        This method simply plot the nodes continuously
+        Derived classes should override this method to get desired shape
+        """
+        if fig is None:
+            fig = pl.figure()
+        x = [n.getX()[0] for n in self.Nodes]
+        if self.Ndim > 1:
+            y = [n.getX()[1] for n in self.Nodes]
+        #if self.Ndim == 3:
+        #    z = [n.getX()[2] for n in self.Nodes]
+        if self.Ndim == 1:
+            return pl.plot(np.array(x),col),[n.getX() for n in self.Nodes]
+        if self.Ndim == 2:
+            return pl.plot(np.array(x),np.array(y),col),\
+            [n.getX() for n in self.Nodes]
+        if self.Ndim == 3:
+            """
+            Will be implemented later
+            """
+            return None
+            
 
 # End of class StandardElement definition
 

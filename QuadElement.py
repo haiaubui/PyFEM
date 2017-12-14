@@ -7,6 +7,7 @@ Created on Fri Nov 10 14:19:01 2017
 import itertools as it
 import FEMElement as FE
 import numpy as np
+import pylab as pl
 
 class QuadElement(FE.StandardElement):
     """
@@ -54,6 +55,40 @@ class LagrangeElement2D(QuadElement):
         """
         QuadElement.__init__(self,Nodes,pd,\
         LagrangeBasis1D,nodeOrder,material,intData)
+        
+class Quad9Element(QuadElement):
+    """
+    Quad9 element: quadrilateral element with 9 nodes
+    """
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+        if fig is None:
+            fig = pl.figure()
+        
+        X1 = self.Nodes[0].getX()
+        X2 = self.Nodes[2].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[2].getX()
+        X2 = self.Nodes[8].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[8].getX()
+        X2 = self.Nodes[6].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        X1 = self.Nodes[6].getX()
+        X2 = self.Nodes[0].getX()
+        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        
+        nodes = self.Nodes
+        for n in nodes:
+            pl.plot(n.getX()[0],n.getX()[1],'.b')
+        
+        if number is not None:
+            c = 0.5*(nodes[2].getX()+nodes[6].getX())
+            pl.text(c[0],c[1],str(number))
+        
+        return fig, [nodes[0],nodes[2],nodes[8],nodes[6]]
         
 def LagrangeBasis1D(x_, pd, N_ = None, dN_ = None, Order = None):
     """

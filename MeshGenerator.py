@@ -150,6 +150,12 @@ class Edge(object):
         """
         self.Nodes[0],self.Nodes[1] = self.Nodes[1],self.Nodes[0]
         
+    def makeReversedEdge(self):
+        """
+        Return an edges in reversed node order
+        """
+        return Edge(self.Nodes[1],self.Nodes[0])
+        
     def setNumberDivision(self, ndiv):
         """
         set number of division in this edge
@@ -227,8 +233,13 @@ class Edge(object):
         for t in tn:
             self.divNodes.append(\
             self.Nodes[0].copyToPosition(X1 + (X2 - X1)*t))
-        self.divEdges = [Edge(self.divNodes[i],self.divNodes[i+1]) \
-        for i in range(self.Ndiv - 1)]     
+        self.divEdges = []
+        self.divEdges.append(Edge(self.Nodes[0],self.divNodes[0]))
+        for i in range(self.Ndiv - 1):
+            self.divEdges.append(Edge(self.divNodes[i],self.divNodes[i+1]))
+        self.divEdges.append(Edge(self.divNodes[-1],self.Nodes[1]))
+#        self.divEdges = [Edge(self.divNodes[i],self.divNodes[i+1]) \
+#        for i in range(self.Ndiv - 1)]     
         
     def getDivEdges(self):
         """
@@ -760,6 +771,8 @@ class Geometry(object):
         if isinstance(polys, (list, tuple)):
             for p in polys:
                 self.addPolygon(p)
+        elif isinstance(polys, Polygon):
+            self.addPolygon(polys)
                             
     def getMaterials(self):
         """
@@ -804,11 +817,24 @@ class Geometry(object):
                 cp = centroidPolygon(p)
                 for e in edges:
                     try:
-                        if e not in coveredges:
-                            coveredges.append(e)
-                            normvec.append(e.getNormalVector(cp))
+                        idx = coveredges.index(e)
+                        coveredges.pop(idx)
+                        normvec.pop(idx)
+                    except ValueError:
+                        coveredges.append(e)
+                        normvec.append(e.getNormalVector(cp))
                     except NodesOppositeOrder:
-                        pass
+                        ex = e.makeReversedEdge()
+                        idx = coveredges.index(ex)
+                        coveredges.pop(idx)
+                        normvec.pop(idx)
+#                    try:
+#                        if e not in coveredges:
+#                            coveredges.append(e)
+#                            normvec.append(e.getNormalVector(cp))
+#                    except NodesOppositeOrder:
+#                        print('opposite order')
+#                        pass
                     
         # add divisions of each edge to list of elements
         self.bndMesh = []

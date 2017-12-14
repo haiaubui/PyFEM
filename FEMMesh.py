@@ -7,6 +7,7 @@ Created on Fri Nov 10 18:25:38 2017
 
 import numpy as np
 import pylab as pl
+import FEMBoundary as FB
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon as PlotPoly
 from matplotlib.colors import Normalize
@@ -161,7 +162,7 @@ class Mesh(object):
                 fig,nodes = e.plot(fig, col, number = i)
             else:
                 fig,nodes = e.plot(fig, col)
-            if fill_mat:
+            if fill_mat and e.Ndime == 2:
                 verts = [n.getX() for n in nodes]
                 patches.append(PlotPoly(verts,closed=True))
                 m_id = e.getMaterial().getID()
@@ -173,7 +174,7 @@ class Mesh(object):
             for i,node in enumerate(self.Nodes):
                 pl.text(node.getX()[0],node.getX()[1],str(i))        
                 
-        if fill_mat:
+        if fill_mat and e.Ndime == 2:
             collection = PatchCollection(patches)
             jet = pl.get_cmap('jet')
             cNorm  = Normalize(vmin=0, vmax=max_mat)
@@ -201,6 +202,13 @@ class Mesh(object):
                 min_i = i
                 
         return self.Nodes[min_i], min_i
+        
+    def diagram(self, val):
+        """
+        Somebody please implement this method. I don't know how to do that with
+        current MatPlotLib version.
+        """
+        pass
 
     
 class MeshWithBoundaryElement(Mesh):
@@ -245,6 +253,55 @@ class MeshWithBoundaryElement(Mesh):
         return number of boundary elements
         """
         return self.NBe
+        
+    def plot(self, fig = None, col = '-b', fill_mat = False, e_number = False,\
+    n_number = False):
+        """
+        plot the mesh
+        """
+        patches = []
+        colors = []
+        max_mat = 0
+        for i,e in enumerate(self.Elements):
+            if isinstance(e, FB.StandardBoundary):
+                col1 = '--r'
+            else:
+                col1 = col
+            if e_number:
+                fig,nodes = e.plot(fig, col1, number = i)
+            else:
+                fig,nodes = e.plot(fig, col1)
+            if fill_mat and e.Ndime == 2:
+                verts = [n.getX() for n in nodes]
+                patches.append(PlotPoly(verts,closed=True))
+                m_id = e.getMaterial().getID()
+                colors.append(m_id)
+                if m_id > max_mat:
+                    max_mat = m_id
+        
+        if n_number:
+            for i,node in enumerate(self.Nodes):
+                pl.text(node.getX()[0],node.getX()[1],str(i))        
+                
+        if fill_mat and e.Ndime == 2:
+            collection = PatchCollection(patches)
+            jet = pl.get_cmap('jet')
+            cNorm  = Normalize(vmin=0, vmax=max_mat)
+            collection.set_color(jet(cNorm(colors)))
+            ax = fig.add_subplot(111)
+            collection.set_array(np.array(colors))
+            ax.add_collection(collection)
+            fig.colorbar(collection, ax = ax)
+            
+        pl.gca().set_aspect('equal', adjustable='box')
+        return fig
+        
+    def plotBoundary(self, fig = None, col = '-r'):
+        for i,e in enumerate(self.BoundaryElements):
+            fig,nodes = e.plot(fig, col)
+            
+        pl.gca().set_aspect('equal', adjustable='box')
+        return fig
 
 def get_connections(mesh):
     """
