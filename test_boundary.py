@@ -164,9 +164,9 @@ load = 355.0/0.015/0.01
 intDat = idat.GaussianQuadrature(Ng, 2, idat.Gaussian1D)
 
 intDatB = idat.GaussianQuadrature(3, 1, idat.Gaussian1D)
-#intSingDat = idat.GaussianQuadrature(3, 1, idat.Gaussian1D)
-intSingDat = SI.SingularGaussian1D(12, intDatB.xg,\
-SI.Gaussian_1D_Pn_Log, SI.Gaussian_1D_Pn_Log_Rat)
+intSingDat = idat.GaussianQuadrature(3, 1, idat.Gaussian1D)
+#intSingDat = SI.SingularGaussian1D(12, intDatB.xg,\
+#SI.Gaussian_1D_Pn_Log, SI.Gaussian_1D_Pn_Log_Rat)
 #intSingDat = None
 
 def readInput(filename,nodeOrder,timeOrder,intData,Ndof = 1):
@@ -439,25 +439,51 @@ def get_IT(mesh):
                 if n == nodes[i]:
                     IT[-1].append(i+1)
                     
-    return IT
+    return IT    
     
 #mesh = create_simple_mesh()
     
-mesh = create_mesh()
+#mesh = create_mesh()
 
 #nodeOrder = [[2,1,0,2,1,0,2,1,0],
 #             [2,2,2,1,1,1,0,0,0]]
 #mesh = readInput('/home/haiau/Dropbox/Static_magnetic/testfortran_body.dat',\
 #nodeOrder,tOrder,intDat,2)
 
-output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
-alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
-totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+#output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
+#alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
+#totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+#
+##output.chooseSteps(range(0,100,2))
+#
+#alg.calculate()
+#
+#_,inod = mesh.findNodeNear(np.array([0.015,0.0]))
+#testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
+#testout = [t[0][0] for t in testout]
 
-output.chooseSteps(range(0,100,2))
 
-alg.calculate()
+####Test Element######
+nodes = []
+nodes.append(FN.Node([-1.0,-1.0],2))
+nodes.append(FN.Node([0.0,-1.0],2))
+nodes.append(FN.Node([1.0,-1.0],2))
+nodes.append(FN.Node([-0.75,0.0],2))
+nodes.append(FN.Node([0.0,0.0],2))
+nodes.append(FN.Node([0.75,0.0],2))
+nodes.append(FN.Node([-0.5,1.0],2))
+nodes.append(FN.Node([0.0,1.0],2))
+nodes.append(FN.Node([0.5,1.0],2))
 
-_,inod = mesh.findNodeNear(np.array([0.015,0.0]))
-testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
-testout = [t[0][0] for t in testout]
+teste = AxiSymMagnetic(nodes,[2,2],QE.LagrangeBasis1D,\
+        QE.generateQuadNodeOrder([2,2],2),None,intDat)
+
+N_ = np.zeros(teste.Nnod,teste.dtype)
+dN_ = np.zeros((teste.Ndim,teste.Nnod),teste.dtype)
+
+testxi = teste.getXi(np.array([0.4,0.2]))
+print(testxi)
+teste.basisND(testxi,N_,dN_)
+testx = np.zeros(2,teste.dtype)
+teste.getX(testx,N_)
+print(testx)

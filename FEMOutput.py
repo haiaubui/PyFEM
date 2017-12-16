@@ -70,7 +70,7 @@ class StandardFileOutput(FileOutput):
         """
         Choose time steps to be output
         steps = 'all' : output all steps
-        otherwise: output all in list, iterator, generator steps
+        otherwise: output all in list, tuple, iterator, generator steps
         """
         if steps == 'all':
             self.allsteps = True

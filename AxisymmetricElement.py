@@ -83,6 +83,16 @@ class AxisymmetricStaticBoundary(FB.StandardStaticBoundary):
         self.gradG[1] *= rp/(4.0*np.pi)
             #raise Exception('False elliptic integral')
         
+    def postCalculateF(self, N_, dN_, factor, res):
+        r = self.x_[0]
+        k1 = self.u_[0]*\
+        (self.normv[0]*self.gradG[0]+self.normv[1]*self.gradG[1])
+        k1 *= factor
+        k1 += self.u_[0]*self.G*self.normv[0]*factor/r
+        k2 = self.u_[1]*self.G
+        k2 *= factor
+        res += k1 + k2
+        
     def subCalculateKLinear(self, K, element, i, j):
         #if np.allclose(element.xx_[0],0.0,rtol = 1.0e-14):
         #    K.fill(0.0)

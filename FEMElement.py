@@ -600,7 +600,7 @@ class StandardElement(Element):
         """
         return self.nodeOrder
         
-    def values_at(self, x, val = 'u'):
+    def postCalculate(self, x, val = 'u'):
         """
         Return u, v, a, gradu at position x (in natural coordinates)
         """
@@ -630,6 +630,50 @@ class StandardElement(Element):
                 return a_
             else:
                 raise Exception('No acceleration')
+        
+    def getXi(self, x, N_ = None, dN_ = None, xi = None, max_iter = 100,\
+    rtol = 1.0e-8):
+        """
+        Return natural coordinate xi corresponding to physical coordinate x
+        N_: array to store shape functions
+        dN_: array to store derivatives of shape functions
+        max_iter: maximum number of iterations for Newton method
+        Raise OutsideEdlement if x is not inside element.
+        """
+        if N_ is None:
+            N_ = np.zeros(self.Nnod,self.dtype)
+        if dN_ is None:
+            dN_ = np.zeros((self.Ndim,self.Nnod),self.dtype)
+            
+        if xi is None:
+            xi = np.empty(self.Ndim,self.dtype)
+        xi.fill(0.0)
+        __tempJ__ = np.empty((self.Ndim,self.Ndim),self.dtype)
+        Jmat = np.empty((self.Ndim,self.Ndim),self.dtype)
+        x0 = np.zeros(self.Ndim,self.dtype)
+        deltax = np.zeros(self.Ndim,self.dtype)
+        
+        for _ in range(max_iter):
+            self.basisND(xi, N_, dN_)
+            x0.fill(0.0)
+            self.getX(x0, N_)
+            Jmat.fill(0.0)
+            for i in range(self.Nnod):
+                np.outer(self.Nodes[i].getX(),dN_[:,i],__tempJ__)
+                #np.outer(dN_[:,i],self.Nodes[i].getX(),__tempJ__)
+                Jmat += __tempJ__
+            __determinant__(Jmat)
+            x0 -= x
+            #x0 *= -1.0
+            np.dot(Jmat,x0,deltax)
+            xi -= x0
+            if np.linalg.norm(deltax) < rtol:
+                if np.any(np.fabs(xi) > 1.0):
+                    raise OutsideElement
+                else:
+                    return xi
+        raise OutsideElement
+        
         
         
     def initializeMatrices(self):
@@ -852,6 +896,12 @@ class ElementNoNode(Exception):
 class TimeOrderMismatch(Exception):
     """
     Exception in case of time order mismatch
+    """
+    pass
+
+class OutsideElement(Exception):
+    """
+    Exception in case of point being outside element
     """
     pass
 

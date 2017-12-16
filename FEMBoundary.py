@@ -233,6 +233,9 @@ class StandardBoundary(FE.StandardElement):
         pass
     
     def subCalculate(self, data, element, Nodei, i, linear):
+        """
+        Calculate second integration
+        """
         # Get matrices from data
         timeOrder = data.getTimeOrder()
         #vGlob,vGlobD = data.getRi(),data.getRid()
@@ -332,6 +335,8 @@ class StandardBoundary(FE.StandardElement):
         Calculate matrices and vectors
         Input:
             data: a class that have methods return global matrices and vectors
+            linear: linearity, True: only linear part will be calculated
+                               False: only nonlinear part will be calculated
         """
         # Get matrices from data
         t = data.getTime()
@@ -459,6 +464,43 @@ class StandardBoundary(FE.StandardElement):
                 self.subCalculate(data, self, self.Nodes[i],\
                 i, linear)    
                 
+    def postCalculate(self, x_p, intDat = None):
+        """
+        Calculate value at some point x_p after Finite Element Analysis
+        The mesh has to be updated with values before calling this method
+        """
+        if intDat is None:
+            intDatx = self.intData
+        else:
+            intDatx = intDat
+            
+        N_ = np.zeros(self.Nnod)
+        dN_ = np.zeros((self.Ndim,self.Nnod))
+        
+        res = np.zeros(self.Ndof)
+            
+        for xg,wg in intDatx:
+            self.basisND(xg, N_, dN_)
+            factor = self.Jacobian(dN_)*np.prod(wg)
+            
+            self.x_.fill(0.0)
+            self.getX(self.x_,N_)
+            self.gradu_.fill(0.0)
+            self.getGradUP(self.gradu_,dN_)
+            self.u_.fill(0.0)
+            self.getU(self.u_,N_)
+            self.getV(self.v_,N_)
+            self.getA(self.a_,N_)
+            
+            try:
+                self.calculateGreen(x_p,self.x_)
+            except SingularPoint:
+                continue
+            
+            self.postCalculateF(N_,dN_,factor,res)
+            
+        return res
+        
 
 # End of StandardBoundary class definition
 
