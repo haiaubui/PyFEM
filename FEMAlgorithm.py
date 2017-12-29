@@ -179,6 +179,10 @@ class Algorithm(object):
     def calculateExternalBodyLoad(self):
         for e in self.mesh.getElements():
             e.calculateBodyLoad(self)
+            
+    def prepareElements(self):
+        for e in self.mesh.getElements():
+            e.prepareElement()
         
     def updateValues(self):
         """
@@ -227,7 +231,7 @@ class Algorithm(object):
             self.ML.fill(0.0)
         if self.timeOrder > 0:
             self.DL.fill(0.0)
-        for element in self.mesh:
+        for i,element in enumerate(self.mesh):
             element.calculate(self,linear=True)       
             
     def addLinearMatrices(self):
@@ -301,6 +305,7 @@ class LinearStaticAlgorithm(StaticAlgorithm):
         """
         start analysis
         """
+        self.prepareElements()
         # calculate matrices and vector
         for element in self.mesh:
             element.calculate(self)

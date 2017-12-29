@@ -7,6 +7,7 @@ Created on Fri Nov 10 11:40:01 2017
 
 import numpy as np
 import pylab as pl
+import math
 #import scipy.linalg as la
 import injectionArray as ia
 
@@ -100,6 +101,7 @@ class Element(object):
         self.__temp_u = np.zeros(self.Ndof,dtype)
         self.bodyLoad = None
         self.linear = False
+        self.calculateBoundingBox()
         
     def __str__(self):
         """
@@ -133,6 +135,23 @@ class Element(object):
         false otherwise
         """
         return self.linear
+        
+    def calculateBoundingBox(self):
+        """
+        Calculate bounding box of element
+        """
+        x = [n.getX()[0] for n in self.Nodes]
+        y = [n.getX()[1] for n in self.Nodes]
+        self.__maxx__ = max(x)
+        self.__minx__ = min(x)
+        self.__maxy__ = max(y)
+        self.__miny__ = min(y)
+        
+    def getBoundingBox(self):
+        """
+        Return bounding box of element
+        """
+        return self.__minx__, self.__maxx__, self.__miny__, self.__maxy__
         
     def setLinearity(self, lin):
         """
@@ -526,8 +545,8 @@ class StandardElement(Element):
                 dN_[1,i] = b
             return np.sqrt(Jmat[0,0]**2 + Jmat[0,1]**2)
         for i in range(self.Nnod):
-            a = Jmat[0,0]*dN_[0,i]+Jmat[0,1]*dN_[1,i]
-            b = Jmat[1,0]*dN_[0,i]+Jmat[1,1]*dN_[1,i]
+            a = Jmat[0,0]*dN_[0,i]+Jmat[1,0]*dN_[1,i]
+            b = Jmat[0,1]*dN_[0,i]+Jmat[1,1]*dN_[1,i]
             dN_[0,i] = a
             dN_[1,i] = b
         
@@ -539,6 +558,9 @@ class StandardElement(Element):
             self.basisND(xg, self.Ns_[ig], self.dNs_[ig])
             self.factor[ig] = self.Jacobian(self.dNs_[ig])*np.prod(wg)
             ig += 1
+            
+    def prepareElement(self):
+        self.calculateBasis(self.nodeOrder)
             
     def getBasis(self):
         self.dN_ = self.dNs_[self.ig]
@@ -604,32 +626,94 @@ class StandardElement(Element):
         """
         Return u, v, a, gradu at position x (in natural coordinates)
         """
-        assert x <= 1.0 + 1.0e-14 and x >= -1.0 - 1.0e-14, 'out of element'
-        N_ = np.zeros(self.Nnod,self.dtype)
-        dN_ = np.zeros((self.Ndim,self.Nnod),self.dtype)
+        if np.any(np.fabs(x)>1.0+1.0e-13):
+            raise OutsideElement
+        #N_ = np.zeros(self.Nnod,self.dtype)
+        #dN_ = np.zeros((self.Ndim,self.Nnod),self.dtype)
+        N_ = self.Ns_[0]
+        dN_ = self.dNs_[0]
         self.basisND(x,N_,dN_)
         if val == 'u':
-            u_ = np.zeros(self.Ndof,self.dtype)
-            self.getU(u_)
-            return u_
+            #u_ = np.zeros(self.Ndof,self.dtype)
+            self.u_.fill(0.0)
+            self.getU(self.u_,N_)
+            return self.u_
         if val == 'gradu':
-            gradu = np.zeros(self.Ndof,self.dtype)
-            self.getGradUP(gradu)
-            return gradu
+            #gradu = np.zeros(self.Ndof,self.dtype)
+            self.gradu_.fill(0.0)
+            self.getGradUP(self.gradu_,dN_)
+            return self.gradu_
         if val == 'v':
             if self.timeOrder > 0:
-                v_ = np.zeros(self.Ndof,self.dtype)
-                self.getV(v_)
-                return v_
+                #v_ = np.zeros(self.Ndof,self.dtype)
+                self.v_.fill(0.0)
+                self.getV(self.v_,N_)
+                return self.v_
             else:
                 raise Exception('No velocity')
         if val == 'a':
             if self.timeOrder > 0:
-                a_ = np.zeros(self.Ndof,self.dtype)
-                self.getV(a_)
-                return a_
+                #a_ = np.zeros(self.Ndof,self.dtype)
+                self.a_.fill(0.0)
+                self.getV(self.a_,N_)
+                return self.a_
             else:
                 raise Exception('No acceleration')
+                
+    def insideBoundingBox(self, x):
+        return x[0]<self.__maxx__+1.0e-13 and x[0]>self.__minx__-1.0e-13 \
+        and x[1]<self.__maxy__+1.0e-13 and x[1]>self.__miny__-1.0e-13
+                
+    def getValFromX(self, x, val = 'u'):
+        """
+        Return natural coordinate xi corresponding to physical coordinate x
+        Raise OutsideEdlement if x is not inside element.
+        """
+        if not self.insideBoundingBox(x):
+            raise OutsideElement
+            
+        matA = np.ones((self.Ndim+1,self.Nnod),self.dtype)
+        vecb = np.ones(self.Ndim+1,self.dtype)
+        if self.Ndim == 1:
+            for i in range(self.Nnod):
+                matA[1,i] = self.Nodes[i].getX()
+            vecb[1] = x
+        if self.Ndim == 2:
+            for i in range(self.Nnod):
+                x_ = self.Nodes[i].getX()
+                matA[1,i] = x_[0]
+                matA[2,i] = x_[1]
+            vecb[1] = x[0]
+            vecb[2] = x[1]
+        if self.Ndim == 3:
+            for i in range(self.Nnod):
+                x_ = self.Nodes[i].getX()
+                matA[1,i] = x_[0]
+                matA[2,i] = x_[1]
+                matA[3,i] = x_[2]
+            vecb[1] = x[0]
+            vecb[2] = x[1]
+            vecb[3] = x[2]
+            
+        N_,_,_,_ = np.linalg.lstsq(matA,vecb)
+        if val == 'u':
+            #u_ = np.zeros(self.Ndof,self.dtype)
+            self.getU(self.u_,N_)
+            return self.u_
+        if val == 'v':
+            if self.timeOrder > 0:
+                #v_ = np.zeros(self.Ndof,self.dtype)
+                self.getV(self.v_,N_)
+                return self.v_
+            else:
+                raise Exception('No velocity')
+        if val == 'a':
+            if self.timeOrder > 0:
+                #a_ = np.zeros(self.Ndof,self.dtype)
+                self.getV(self.a_,N_)
+                return self.a_
+            else:
+                raise Exception('No acceleration')    
         
     def getXi(self, x, N_ = None, dN_ = None, xi = None, max_iter = 100,\
     rtol = 1.0e-8):
@@ -640,18 +724,21 @@ class StandardElement(Element):
         max_iter: maximum number of iterations for Newton method
         Raise OutsideEdlement if x is not inside element.
         """
+        if not self.insideBoundingBox(x):
+            raise OutsideElement
+            
         if N_ is None:
             N_ = np.zeros(self.Nnod,self.dtype)
         if dN_ is None:
             dN_ = np.zeros((self.Ndim,self.Nnod),self.dtype)
             
         if xi is None:
-            xi = np.empty(self.Ndim,self.dtype)
+            xi = np.empty(self.Ndime,self.dtype)
         xi.fill(0.0)
         __tempJ__ = np.empty((self.Ndim,self.Ndim),self.dtype)
         Jmat = np.empty((self.Ndim,self.Ndim),self.dtype)
         x0 = np.zeros(self.Ndim,self.dtype)
-        deltax = np.zeros(self.Ndim,self.dtype)
+        #deltax = np.zeros(self.Ndime,self.dtype)
         
         for _ in range(max_iter):
             self.basisND(xi, N_, dN_)
@@ -662,13 +749,21 @@ class StandardElement(Element):
                 np.outer(self.Nodes[i].getX(),dN_[:,i],__tempJ__)
                 #np.outer(dN_[:,i],self.Nodes[i].getX(),__tempJ__)
                 Jmat += __tempJ__
-            __determinant__(Jmat)
-            x0 -= x
-            #x0 *= -1.0
-            np.dot(Jmat,x0,deltax)
-            xi -= x0
-            if np.linalg.norm(deltax) < rtol:
-                if np.any(np.fabs(xi) > 1.0):
+            if np.allclose(__determinant__(Jmat),0.0,rtol=1.0e-14):
+                #x0 -= x
+                if Jmat[0,0] != 0.0:
+                    Jmat[0,0] = 1.0/Jmat[0,0]
+                if Jmat[1,0] != 0.0:
+                    Jmat[1,0] = 1.0/Jmat[1,0]
+                deltax = np.dot((x0-x),Jmat[:,0])
+            else:
+                #x0 -= x
+                #x0 *= -1.0
+                deltax = np.dot(Jmat,(x0-x))
+            xi -= deltax
+            if np.linalg.norm(x0-x) < rtol:
+                if np.any(np.fabs(xi) > 1.0+1.0e-13):
+                    #print('outside',xi)
                     raise OutsideElement
                 else:
                     return xi
@@ -701,6 +796,7 @@ class StandardElement(Element):
         for xg, wg in GaussPoints:
             self.ig += 1
             self.getBasis()
+            self.getAllValues(data)
             self.material.calculate(self)
             for i in range(self.Nnod):
                 try:
@@ -902,6 +998,12 @@ class TimeOrderMismatch(Exception):
 class OutsideElement(Exception):
     """
     Exception in case of point being outside element
+    """
+    pass
+
+class ElementError(Exception):
+    """
+    Exception for errors of element
     """
     pass
 

@@ -7,6 +7,7 @@ Created on Thu Nov 30 13:52:04 2017
 
 import numpy as np
 import FEMElement as FE
+import math
 
 class StandardBoundary(FE.StandardElement):
     """
@@ -421,8 +422,11 @@ class StandardBoundary(FE.StandardElement):
                         pass
                     # loop over orther boundary elements
                     for belement in otherB:
+                        if belement == self:
+                            continue
                         self.subCalculate(data, belement, self.Nodes[i],\
                         i, linear)
+                    self.subCalculate(data, self, self.Nodes[i],i, linear)
                 continue
             
             # loop over node i            
@@ -464,7 +468,7 @@ class StandardBoundary(FE.StandardElement):
                 self.subCalculate(data, self, self.Nodes[i],\
                 i, linear)    
                 
-    def postCalculate(self, x_p, intDat = None):
+    def postCalculateX(self, x_p, intDat = None):
         """
         Calculate value at some point x_p after Finite Element Analysis
         The mesh has to be updated with values before calling this method
@@ -474,8 +478,10 @@ class StandardBoundary(FE.StandardElement):
         else:
             intDatx = intDat
             
-        N_ = np.zeros(self.Nnod)
-        dN_ = np.zeros((self.Ndim,self.Nnod))
+        #N_ = np.zeros(self.Nnod)
+        #dN_ = np.zeros((self.Ndim,self.Nnod))
+        N_ = self.Ns_[0]
+        dN_ = self.dNs_[0]
         
         res = np.zeros(self.Ndof)
             
@@ -489,7 +495,9 @@ class StandardBoundary(FE.StandardElement):
             self.getGradUP(self.gradu_,dN_)
             self.u_.fill(0.0)
             self.getU(self.u_,N_)
+            self.v_.fill(0.0)
             self.getV(self.v_,N_)
+            self.a_.fill(0.0)
             self.getA(self.a_,N_)
             
             try:
@@ -498,6 +506,7 @@ class StandardBoundary(FE.StandardElement):
                 continue
             
             self.postCalculateF(N_,dN_,factor,res)
+        res *= 2.0
             
         return res
         
@@ -563,6 +572,46 @@ class StandardMovingBoundary(StandardBoundary):
         intData,intSingData,normv,ide,intExtSingData,dtype,commonData)
         self.current = True
         self.dgradG = np.zeros((self.Ndim,self.Ndim),self.dtype)
+        
+        
+class StraightBoundary1D(StandardBoundary):
+    """
+    1-dimensional boundary which is a straight line
+    """
+    def getXi(self, x, N_ = None, dN_ = None, xi = None, max_iter = 100,\
+    rtol = 1.0e-8):
+        """
+        Return natural coordinate xi corresponding to physical coordinate x
+        N_: array to store shape functions
+        dN_: array to store derivatives of shape functions
+        max_iter: maximum number of iterations for Newton method
+        Raise OutsideEdlement if x is not inside element.
+        """
+        raise FE.OutsideElement
+        if self.nodeOrder is None:
+            X1 = self.Nodes[0].getX()
+            X2 = self.Nodes[-1].getX()
+        else:
+            try:
+                for i,no in enumerate(self.nodeOrder[0]):
+                    if no == 0:
+                        X1 = self.Nodes[i].getX()
+                    if no == self.Nnod-1:
+                        X2 = self.Nodes[i].getX()
+            except TypeError:
+                for i,no in enumerate(self.nodeOrder):
+                    if no == 0:
+                        X1 = self.Nodes[i].getX()
+                    if no == self.Nnod-1:
+                        X2 = self.Nodes[i].getX()
+                        
+        dist1 = np.linalg.norm(x-X1)
+        dist2 = np.linalg.norm(x-X2)
+        toldist = np.linalg.norm(X1-X2)
+        if math.fabs(dist1 + dist2 - toldist) > 1.0e-14:
+            raise FE.OutsideElement
+        return dist1/toldist*2.0 - 1.0
+        
 
 class SingularPoint(Exception):
     """

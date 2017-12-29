@@ -17,17 +17,20 @@ class GeneralNode(object):
     """
     General node includes only coordinates of node
     """
-    def __init__(self, X, ndim):
+    def __init__(self, X, ndim, res=1.0e-14):
         """
         Initialized generalized Node
         Input:
             X: coordinates of node
             ndim: number of dimension
+            res: resolution, smallest distance possible between two nodes
         """
         assert ndim > 0, 'Number of dimensions must be a positive number'
         self.Ndim = ndim
         assert len(X) >= ndim, 'There is not enough coordinate'
         self.X_ = np.array(X[0:self.Ndim])
+        assert res > 0.0, 'resolution must be a positive number'
+        self.res = res
         
     def copyToPosition(self, X):
         """
@@ -53,6 +56,22 @@ class GeneralNode(object):
         """
         return self.X_
         
+    def isInside(self, boders):
+        """
+        Return True if node is inside boders,
+        boders = [left, right, under, upper, back, front] for 3d
+        boders = [left, right, under, upper] for 2d
+        boders = [left, right] for 1d
+        False otherwise
+        """
+        for i in range(self.Ndim):
+            if self.X_[i] < boders[i*2] or self.X_[i] > boders[i*2+1]:
+                return False
+                
+        return True
+        
+        
+        
     def __eq__(self, node):
         """
         Compare this node to other node
@@ -65,7 +84,7 @@ class GeneralNode(object):
         if self.Ndim != node.getNdim():
             raise NodesNotSameDimension
         
-        return np.linalg.norm(self.X_ - node.getX()) < 1.0e-14
+        return np.linalg.norm(self.X_ - node.getX()) < self.res
         
     def __str__(self):
         """

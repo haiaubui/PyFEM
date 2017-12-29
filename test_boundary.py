@@ -11,6 +11,7 @@ import AxisymmetricElement as AE
 import math
 import numpy as np
 import pylab as pl
+import FEMBoundary as FB
 import AxisymmetricElement as AE
 import QuadElement as QE
 import FEMNode as FN
@@ -38,7 +39,7 @@ class LinearMagneticMaterial(mat.Material):
     def getID(self):
         return self.idx
         
-class AxiSymMagnetic(AE.AxisymmetricQuadElement):
+class AxiSymMagnetic(AE.AxisymmetricQuadElement, QE.Quad9Flat):
     def __init__(self, Nodes, pd, basisFunction, nodeOrder,material, intData):
         AE.AxisymmetricQuadElement.__init__(self,Nodes,pd,basisFunction,\
         nodeOrder,material,intData)
@@ -135,7 +136,7 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement):
         
         return fig, [nodes[0],nodes[2],nodes[8],nodes[6]]
 
-class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary):
+class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary,FB.StraightBoundary1D):
     def calculateKLinear(self, K, i, j, t):
         K[0,1] = self.N_[i]*self.N_[j]
         K[0,1] *= self.getFactor()*2.0*np.pi*self.x_[0]/self.material.mu0
@@ -288,9 +289,9 @@ def create_mesh():
     polys[0].setDivisionEdge24(2)
     polys[8].setDivisionEdge24(2)
     
-    mat2 = LinearMagneticMaterial(1.0,1.0,5.0e6,2)
+    mat2 = LinearMagneticMaterial(1.0,0.0,5.0e6,2)
     #mat1 = JAMaterial(5.0e6,9,1)
-    mat1 = LinearMagneticMaterial(100.0,1.0,5.0e6,1)
+    mat1 = LinearMagneticMaterial(100.0,0.0,5.0e6,1)
     
     for i in range(9):
         polys[i].setMaterial(mat1)
@@ -318,8 +319,8 @@ def create_mesh():
         QE.generateQuadNodeOrder([2,2],2),m,intDat))
         if bdls[i] is not None:
             def loadfunc(x,t):
-                return load*math.cos(8.1e3*2*np.pi*t)
-                #return load
+                #return load*math.cos(8.1e3*2*np.pi*t)
+                return load
         else:
             loadfunc = None
         elements[i].setBodyLoad(loadfunc)
@@ -369,12 +370,14 @@ def create_simple_mesh():
     poly2 = edge2.extendToQuad(np.array([0.0,1.0]),0.5)
     poly2.setBodyLoad(1.0)
     
+    poly1.setDivisionEdge24(2)
+    
     geo = mg.Geometry()
     geo.addPolygon(poly1)
     geo.addPolygon(poly2)
     
-    mat1 = LinearMagneticMaterial(1.0,0.0,5.0e6,1)
-    mat2 = LinearMagneticMaterial(1.0,0.0,0.0,2)
+    mat1 = LinearMagneticMaterial(1.0,1.0,0.0,1)
+    mat2 = LinearMagneticMaterial(1.0,1.0,0.0,2)
     poly1.setMaterial(mat1)
     poly2.setMaterial(mat2)
     
@@ -441,7 +444,7 @@ def get_IT(mesh):
                     
     return IT    
     
-#mesh = create_simple_mesh()
+mesh = create_simple_mesh()
     
 #mesh = create_mesh()
 
@@ -449,41 +452,62 @@ def get_IT(mesh):
 #             [2,2,2,1,1,1,0,0,0]]
 #mesh = readInput('/home/haiau/Dropbox/Static_magnetic/testfortran_body.dat',\
 #nodeOrder,tOrder,intDat,2)
+#
+output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
+alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
+totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
 
-#output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
-#alg = NM.NonlinearAlphaAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
-#totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
-#
-##output.chooseSteps(range(0,100,2))
-#
-#alg.calculate()
-#
+#output.chooseSteps(range(0,100,2))
+
+alg.calculate()
+
 #_,inod = mesh.findNodeNear(np.array([0.015,0.0]))
 #testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
 #testout = [t[0][0] for t in testout]
 
-
+output.updateToMesh(mesh,10)
+#X,Y,Z = mesh.meshgridValue([0.0,0.2,-0.2,0.2],0.01,1.0e-8)
+X,Y,Z = mesh.meshgridValue([0.0,3.0,-2.0,3.0],0.02,1.0e-8)
+udat = [n.getU().tolist() for n in mesh.Nodes]
 ####Test Element######
-nodes = []
-nodes.append(FN.Node([-1.0,-1.0],2))
-nodes.append(FN.Node([0.0,-1.0],2))
-nodes.append(FN.Node([1.0,-1.0],2))
-nodes.append(FN.Node([-0.75,0.0],2))
-nodes.append(FN.Node([0.0,0.0],2))
-nodes.append(FN.Node([0.75,0.0],2))
-nodes.append(FN.Node([-0.5,1.0],2))
-nodes.append(FN.Node([0.0,1.0],2))
-nodes.append(FN.Node([0.5,1.0],2))
-
-teste = AxiSymMagnetic(nodes,[2,2],QE.LagrangeBasis1D,\
-        QE.generateQuadNodeOrder([2,2],2),None,intDat)
-
-N_ = np.zeros(teste.Nnod,teste.dtype)
-dN_ = np.zeros((teste.Ndim,teste.Nnod),teste.dtype)
-
-testxi = teste.getXi(np.array([0.4,0.2]))
-print(testxi)
-teste.basisND(testxi,N_,dN_)
-testx = np.zeros(2,teste.dtype)
-teste.getX(testx,N_)
-print(testx)
+#nodes = []
+#nodes.append(FN.Node([-1.0,-1.0],2))
+#nodes.append(FN.Node([0.0,-1.0],2))
+#nodes.append(FN.Node([1.0,-1.0],2))
+#nodes.append(FN.Node([-0.75,0.0],2))
+#nodes.append(FN.Node([0.0,0.0],2))
+#nodes.append(FN.Node([0.75,0.0],2))
+#nodes.append(FN.Node([-0.5,1.0],2))
+#nodes.append(FN.Node([0.0,1.0],2))
+#nodes.append(FN.Node([0.5,1.0],2))
+#
+#teste = AxiSymMagnetic(nodes,[2,2],QE.LagrangeBasis1D,\
+#        QE.generateQuadNodeOrder([2,2],2),None,intDat)
+#
+#N_ = np.zeros(teste.Nnod,teste.dtype)
+#dN_ = np.zeros((teste.Ndim,teste.Nnod),teste.dtype)
+#
+#testxi = teste.getXi(np.array([0.625,0.5]))
+#print(testxi)
+#teste.basisND(testxi,N_,dN_)
+#testx = np.zeros(2,teste.dtype)
+#teste.getX(testx,N_)
+#print(testx)
+#
+#node1 = FN.Node([0.015, -0.1],2)
+#node2 = FN.Node([0.015, -0.08750000000000001],2)
+#node3 = FN.Node([0.015, -0.07500000000000001],2)
+#
+#testb = AxiSymMagneticBoundary([node1,node2,node3],2,\
+#        QE.LagrangeBasis1D,QE.generateQuadNodeOrder(2,1),\
+#        intDatB,intSingDat,[0.0,1.0],0)
+#
+#Nb_ = np.zeros(testb.Nnod,testb.dtype)
+#dNb_ = np.zeros((testb.Ndim,testb.Nnod),testb.dtype)
+#
+#testxib = testb.getXi(np.array([0.625,0.5]))
+#print(testxib)
+#testb.basisND(testxib,Nb_,dNb_)
+#testxb = np.zeros(2,testb.dtype)
+#testb.getX(testxb,Nb_)
+#print(testxb)

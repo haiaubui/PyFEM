@@ -133,6 +133,20 @@ class Node(GeneralNode):
         """
         return self.a_
         
+    def getValue(self, val = 'u'):
+        """
+        Return value at node
+        val = 'u' return displacement, variable
+        val = 'v'        velocity    , time derivative of variable
+        val = 'a'        acceleration, second time derivative of variable
+        """
+        if val == 'u':
+            return self.u_
+        if val == 'v':
+            return self.v_
+        if val == 'a':
+            return self.a_
+        
     def setU(self, u):
         """
         set displacement

@@ -209,6 +209,7 @@ class LinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
         start analysis
         """
         print("Start Analysis")
+        self.prepareElements()
         self.calculateParameters()
         self.initialConditions()
         self.calculateMatrices()
@@ -270,6 +271,7 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
         start analysis
         """
         print("Start Analysis")
+        self.prepareElements()
         self.connect()
         self.check_point_load()
         self.calculateParameters()

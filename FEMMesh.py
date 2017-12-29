@@ -8,6 +8,8 @@ Created on Fri Nov 10 18:25:38 2017
 import numpy as np
 import pylab as pl
 import FEMBoundary as FB
+from FEMElement import OutsideElement
+from MeshGenerator import GeneralNode as GNode
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon as PlotPoly
 from matplotlib.colors import Normalize
@@ -202,13 +204,138 @@ class Mesh(object):
                 min_i = i
                 
         return self.Nodes[min_i], min_i
+    
+    def meshgrid(self, boders, res, min_res):
+        """
+        Create grid from within boders.
+        Return list of grid nodes that can be used for post processing.
+        boders = [left, right, under, upper]
+        res: resolution of grid, maximum distance in grid
+        min_res: minimum distance between points in grid
+        """
+        anchors = []
+        for n in self.Nodes:
+            if n.isInside(boders):
+                anchors.append(n)
+                
+        x = np.arange(boders[0],boders[1]+res*0.5,res).tolist()
+        y = np.arange(boders[2],boders[3]+res*0.5,res).tolist()
+        for n in anchors:
+            x_ = n.getX()
+            x.append(x_[0])
+            y.append(x_[1])
+            
+        x.sort()
+        y.sort()
+                
+        refine_list(x, min_res)
+        refine_list(y, min_res)
+                
+        X,Y = np.meshgrid(x,y)
+        return nodes_from_meshgrid(X, Y),X,Y
         
-    def diagram(self, val):
+    def getValue(self, x, val='u'):
         """
-        Somebody please implement this method. I don't know how to do that with
-        current MatPlotLib version.
+        Get value at position x
+        Raise OutsideMesh if x is not lying inside mesh
         """
-        pass
+        for e in self.Elements:
+            try:
+                xi = e.getXi(x)
+                return e.postCalculate(xi, val)
+                #return e.getValFromX(x, val)
+            except OutsideElement:
+                continue
+        raise OutsideMesh
+        
+    def meshgridValue(self, boders, res, min_res, val='u', idof = 0, idir = 0):
+        """
+        Get mesh grid and value within boders
+        boders = [left, right, under, upper]
+        res: resolution of grid, maximum distance in grid
+        min_res: minimum distance between points in grid
+        val: value to be plotted, 'u', 'v', 'a', or 'gradu'
+        idof: index of degree of freedom
+        idir: direction of gradient
+        """
+        nodes,X,Y = self.meshgrid(boders,res,min_res)
+        values = np.empty(len(nodes),self.Nodes[0].dtype)
+        values.fill(np.nan)
+        grad = val == 'gradu'
+        for i,n in enumerate(nodes):
+            try:
+                value = self.getValue(n.getX(),val)[idof]                
+            except OutsideMesh:
+                print(n)
+                continue
+            if grad:
+                values[i] = value[idir]
+            else:
+                values[i] = value
+            
+        return X,Y,values.reshape(X.shape)
+        
+    def meshValue(self, meshx, meshy, val = 'u', idof=0, idir = 0):
+        """
+        Get values at mesh defined by rectangular mesh meshy and meshy
+        meshx: array, mesh points in x direction
+        meshy: array, mesh points in y direction
+        val: value to be plotted, 'u', 'v', 'a', or 'gradu'
+        idof: index of degree of freedom
+        idir: direction of gradient
+        """
+        X,Y = np.meshgrid(meshx,meshy)
+        nodes = nodes_from_meshgrid(X, Y)
+        values = np.empty(len(nodes),self.Nodes[0].dtype)
+        values.fill(np.nan)
+        grad = val == 'gradu'
+        for i,n in enumerate(nodes):
+            try:
+                value = self.getValue(n.getX(),val)[idof]                
+            except OutsideMesh:
+                print(n)
+                continue
+            if grad:
+                values[i] = value[idir]
+            else:
+                values[i] = value
+            
+        return X,Y,values.reshape(X.shape)
+        
+    def contour(self, boders, res, min_res, fig = None, val='u', idof = 0):
+        """
+        Create countour plot within boders.
+        boders = [left, right, under, upper]
+        res: resolution of grid, maximum distance in grid
+        min_res: minimum distance between points in grid
+        val: value to be plotted, 'u', 'v', 'a', or 'gradu'
+        idof: index of degree of freedom
+        """
+        X,Y,Z = self.meshgridValue(boders,res,min_res,val,idof)
+            
+        if fig is None:
+            fig = pl.figure()
+        pl.contour(X,Y,Z)
+        pl.gca().set_aspect('equal', adjustable='box')
+        return fig
+        
+    def contourf(self, boders, res, min_res, fig = None, val='u', idof = 0):
+        """
+        Create a contour filled with color within boders.
+        boders = [left, right, under, upper]
+        res: resolution of grid, maximum distance in grid
+        min_res: minimum distance between points in grid
+        val: value to be plotted, 'u', 'v', 'a', or 'gradu'
+        idof: index of degree of freedom
+        """
+        X,Y,Z = self.meshgridValue(boders,res,min_res,val,idof)
+            
+        if fig is None:
+            fig = pl.figure()
+        
+        pl.contourf(X,Y,Z)
+        pl.gca().set_aspect('equal', adjustable='box')
+        return fig
 
     
 class MeshWithBoundaryElement(Mesh):
@@ -302,6 +429,27 @@ class MeshWithBoundaryElement(Mesh):
             
         pl.gca().set_aspect('equal', adjustable='box')
         return fig
+        
+    def getValue(self, x, val='u'):
+        """
+        Get value at position x
+        If val=='u' and x is outside mesh, calculate value from boundary.
+        Raise OutsideMesh otherwise
+        """
+        for e in self.Elements:
+            try:
+                xi = e.getXi(x)
+                return e.postCalculate(xi, val)
+            except OutsideElement:
+                continue
+        if val != 'u':
+            raise OutsideMesh
+            
+        res = np.zeros(self.Nodes[0].Ndof,self.Nodes[0].dtype)
+        for e in self.BoundaryElements:
+            res += e.postCalculateX(x)
+            
+        return res
 
 def get_connections(mesh):
     """
@@ -332,9 +480,39 @@ def get_connection(mesh, e):
                 IT.append(i+1)
     return IT
 
+def refine_list(x, min_res):
+    """
+    delete elements with distances smaller than min_res
+    """
+    i = 0
+    a = len(x)
+    while i < a-1:
+        if x[i+1]-x[i] < min_res:
+            x.pop(i+1)
+            a -= 1
+        else:
+            i += 1
+            
+def nodes_from_meshgrid(X, Y):
+    """
+    create list of nodes of meshgrid X,Y from numpy function meshgrid
+    """
+    nodes = []
+    for i,y in enumerate(Y):
+        for j,yi in enumerate(y):
+            nodes.append(GNode([X[i][j],yi],2))
+            
+    return nodes
+
 class EmptyMesh(Exception):
     """
     Exception for empty mesh (mesh without nodes)
     """
     pass
-        
+
+class OutsideMesh(Exception):
+    """
+    Exception in case of a point is outside mesh
+    """
+    pass
+       

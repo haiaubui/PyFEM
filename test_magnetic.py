@@ -10,6 +10,7 @@ import numpy as np
 import pylab as pl
 import AxisymmetricElement as AE
 import QuadElement as QE
+import FEMElement as FE
 import FEMNode as FN
 import FEMMesh as FM
 import FEMOutput as FO
@@ -246,9 +247,10 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement, QE.Quad9Element):
         R[0] += re
         
     def calculateRe(self, R, inod, t):
-        re = -self.N_[inod]*self.getBodyLoad(t)
+        re = self.N_[inod]*self.getBodyLoad(t)
         re *= self.getFactor()
         R[0] = re
+    
 
 def readInput(filename,nodeOrder,timeOrder,intData,Ndof = 1):
     mesh = FM.Mesh()
@@ -318,31 +320,31 @@ totalTime = 1.0e-3
 numberTimeSteps = 100
 rho_inf = 0.9
 tol = 1.0e-8
-#load = 355.0/0.015/0.01
-load = 355.0
+load = 355.0/0.015/0.01
+#load = 355.0
 
 intDat = idat.GaussianQuadrature(Ng, 2, idat.Gaussian1D)
 
-nodeOrder = [[2,1,0,2,1,0,2,1,0],
-             [2,2,2,1,1,1,0,0,0]]
+nodeOrder = [[0,1,2,0,1,2,0,1,2],
+             [0,0,0,1,1,1,2,2,2]]
 
 #mesh = readInput('/home/haiau/Documents/testfortran_.dat',nodeOrder,tOrder,intDat)
 #for e in mesh.getElements():
 #    if e.material.getID() == 3:
 #        def loadfunc(x,t):
-#                return load*math.cos(8.1e3*2*np.pi*t)
+#                return -load*math.sin(8.1e3*2*np.pi*t)
 #        e.setBodyLoad(loadfunc)
 
 def loadfunc(x,t):
-    return load*math.cos(8.1e3*2*np.pi*t)
+    return -load*math.sin(8.1e3*2*np.pi*t)
 
 def create_mesh():
     nodes = []
-    nodes.append(FN.Node([0.0,0.0],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.015,0.0],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.0225,0.0],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.0325,0.0],Ndof,timeOrder = tOrder))
-    nodes.append(FN.Node([0.2,0.0],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0,-0.2],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.015,-0.2],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0225,-0.2],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.0325,-0.2],Ndof,timeOrder = tOrder))
+    nodes.append(FN.Node([0.2,-0.2],Ndof,timeOrder = tOrder))
     
     edges = [mg.Edge(nodes[i],nodes[i+1]) for i in range(len(nodes)-1)]
     
@@ -407,9 +409,9 @@ def create_mesh():
        
     for n in nodesx:
         if math.fabs(n.getX()[0]-0.0)<1.0e-14 or \
-        math.fabs(n.getX()[1]-0.0)<1.0e-14 or \
+        math.fabs(n.getX()[1]-0.2)<1.0e-14 or \
         math.fabs(n.getX()[0]-0.2)<1.0e-14 or \
-        math.fabs(n.getX()[1]-0.4)<1.0e-14:
+        math.fabs(n.getX()[1]+0.2)<1.0e-14:
             n.setConstraint(False, 0.0, 0)
             #n.setConstraint(False, 0.0, 1)
             #pl.plot(n.getX()[0],n.getX()[1],'.r')
@@ -421,10 +423,10 @@ def create_mesh():
         #else:
         #    m = mats[i]
         m = mats[i]
-        elements.append(AxiSymMagnetic(e,[2,2],QE.LagrangeBasis1D,\
-        QE.generateQuadNodeOrder([2,2],2),m,intDat))
         #elements.append(AxiSymMagnetic(e,[2,2],QE.LagrangeBasis1D,\
-        #nodeOrder,m,intDat))
+        #QE.generateQuadNodeOrder([2,2],2),m,intDat))
+        elements.append(AxiSymMagnetic(e,[2,2],QE.LagrangeBasis1D,\
+        nodeOrder,m,intDat))
         #if m.getID() == 1:
         #    elements[-1].setLinearity(False)
         #if bdls[i] is not None:
@@ -496,11 +498,14 @@ mesh = create_mesh()
 
 mesh.generateID()      
 
-#output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
-#alg = NM.NonlinearNewmarkAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
-#totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
-#
-##alg.calculate()
+output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
+alg = NM.NonlinearNewmarkAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
+totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+
+alg.calculate()
+
+output.updateToMesh(mesh,10)
+#X,Y,Z = mesh.meshgridValue([0.0,0.2,-0.2,0.2],0.01,1.0e-8)
 #
 #cProfile.run('alg.calculate()','calculate.profile')
 #stats = pstats.Stats('calculate.profile')
