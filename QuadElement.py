@@ -6,6 +6,7 @@ Created on Fri Nov 10 14:19:01 2017
 """
 import itertools as it
 import FEMElement as FE
+import PolarElement as PE
 import numpy as np
 import pylab as pl
 import math
@@ -24,6 +25,48 @@ class QuadElement(FE.StandardElement):
             self.nodeOrder = generateQuadNodeOrder(self.pd, self.Ndim)
         FE.StandardElement.basisND(self, x_, N_, dN_)
 
+
+class PolarQuadElement(PE.PolarElement,QuadElement):
+    """
+    Quadrilateral Element in Polar Coordinates
+    """
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+        if fig is None:
+            fig = pl.figure()
+        
+        X1 = self.Nodes[0].getX(self.loop[0])
+        X2 = self.Nodes[2].getX(self.loop[2])
+        xa1 = np.linspace(min(X1[1],X2[1]),max(X1[1],X2[1]),20)
+        xa2 = np.linspace(min(X1[0],X2[0]),max(X1[0],X2[0]),20)
+        pl.polar(xa1,xa2,col)
+        
+        X1 = self.Nodes[2].getX(self.loop[2])
+        X2 = self.Nodes[8].getX(self.loop[8])
+        xa1 = np.linspace(min(X1[1],X2[1]),max(X1[1],X2[1]),20)
+        xa2 = np.linspace(min(X1[0],X2[0]),max(X1[0],X2[0]),20)
+        pl.polar(xa1,xa2,col)
+        
+        X1 = self.Nodes[8].getX(self.loop[8])
+        X2 = self.Nodes[6].getX(self.loop[6])
+        xa1 = np.linspace(min(X1[1],X2[1]),max(X1[1],X2[1]),20)
+        xa2 = np.linspace(min(X1[0],X2[0]),max(X1[0],X2[0]),20)
+        pl.polar(xa1,xa2,col)
+        
+        X1 = self.Nodes[6].getX(self.loop[6])
+        X2 = self.Nodes[0].getX(self.loop[0])
+        xa1 = np.linspace(min(X1[1],X2[1]),max(X1[1],X2[1]),20)
+        xa2 = np.linspace(min(X1[0],X2[0]),max(X1[0],X2[0]),20)
+        pl.polar(xa1,xa2,col)
+        
+        nodes = self.Nodes
+        for n in nodes:
+            pl.polar(n.getX()[1],n.getX()[0],'.b')
+        
+        if number is not None:
+            c = 0.5*(nodes[2].getX(self.loop[2])+nodes[6].getX(self.loop[6]))
+            pl.text(c[1],c[0],str(number))
+        
+        return fig, [nodes[0],nodes[2],nodes[8],nodes[6]]
 
 class LagrangeElement1D(QuadElement):
     """

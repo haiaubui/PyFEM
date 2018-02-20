@@ -374,7 +374,8 @@ def array(data, dtype = None):
                 size = (size1,size2)
             except TypeError:
                 size = len(data)
-                    
+    
+          
     res = injectArray(size,dtype)
                     
     it = np.nditer(res.data,flags=['c_index','multi_index','refs_ok'],\

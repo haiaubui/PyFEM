@@ -10,6 +10,7 @@ import pylab as pl
 import FEMBoundary as FB
 from FEMElement import OutsideElement
 from MeshGenerator import GeneralNode as GNode
+from PolarElement import PolarNode
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon as PlotPoly
 from matplotlib.colors import Normalize
@@ -31,6 +32,8 @@ class Mesh(object):
         self.Neq = 0
         self.NeqD = 0
         self.iter_index = 0
+        self.polar = False
+        self.current = False
         
     def __iter__(self):
         """
@@ -84,6 +87,8 @@ class Mesh(object):
         add element to mesh
         """
         self.Elements.append(Element)
+        if Element.current:
+            self.current = True
         self.Ne += 1
         nodes = Element.getNodes()
         for i,n in enumerate(nodes):
@@ -103,6 +108,8 @@ class Mesh(object):
         if Elements is not None:
             for e in Elements:
                 self.addElement(e)
+                if e.current:
+                    self.current = True
         
     def getNodes(self):
         """
@@ -152,36 +159,52 @@ class Mesh(object):
         self.NeqD = -cntd - 1
         
     def plot(self, fig = None, col = '-b', fill_mat = False, e_number = False,\
-    n_number = False):
+    n_number = False, body_load=False):
         """
         plot the mesh
         """
         patches = []
         colors = []
         max_mat = 0
+        has_2dim = False
         for i,e in enumerate(self.Elements):
             if e_number:
                 fig,nodes = e.plot(fig, col, number = i)
             else:
                 fig,nodes = e.plot(fig, col)
-            if fill_mat and e.Ndime == 2:
-                verts = [n.getX() for n in nodes]
+            if (fill_mat and e.Ndime == 2) or (body_load and e.hasBodyLoad()):
+                has_2dim = True
+                if self.polar:
+                    verts = \
+                    [np.array([n.getX(e.loop[i])[1],n.getX(e.loop[i])[0]])\
+                    for i,n in enumerate(nodes)]
+                else:
+                    verts = [n.getX() for n in nodes]
                 patches.append(PlotPoly(verts,closed=True))
-                m_id = e.getMaterial().getID()
+                if fill_mat:
+                    m_id = e.getMaterial().getID()
+                if body_load and e.hasBodyLoad():
+                    m_id = e.id_bodyLoad + 0.5
                 colors.append(m_id)
                 if m_id > max_mat:
                     max_mat = m_id
         
         if n_number:
             for i,node in enumerate(self.Nodes):
-                pl.text(node.getX()[0],node.getX()[1],str(i))        
+                if self.polar:
+                    pl.text(node.getX()[1],node.getX()[0],str(i)) 
+                else:
+                    pl.text(node.getX()[0],node.getX()[1],str(i))        
                 
-        if fill_mat and e.Ndime == 2:
+        if fill_mat and has_2dim:
             collection = PatchCollection(patches)
             jet = pl.get_cmap('jet')
             cNorm  = Normalize(vmin=0, vmax=max_mat)
             collection.set_color(jet(cNorm(colors)))
-            ax = fig.add_subplot(111)
+            if self.polar:
+                ax = fig.add_subplot(111,projection='polar')
+            else:
+                ax = fig.add_subplot(111)
             collection.set_array(np.array(colors))
             ax.add_collection(collection)
             fig.colorbar(collection, ax = ax)
@@ -232,14 +255,14 @@ class Mesh(object):
         refine_list(y, min_res)
                 
         X,Y = np.meshgrid(x,y)
-        return nodes_from_meshgrid(X, Y),X,Y
+        return nodes_from_meshgrid(X, Y, self.polar),X,Y
         
     def getValue(self, x, val='u'):
         """
         Get value at position x
         Raise OutsideMesh if x is not lying inside mesh
         """
-        for e in self.Elements:
+        for i,e in enumerate(self.Elements):
             try:
                 xi = e.getXi(x)
                 return e.postCalculate(xi, val)
@@ -266,7 +289,7 @@ class Mesh(object):
             try:
                 value = self.getValue(n.getX(),val)[idof]                
             except OutsideMesh:
-                print(n)
+                #print(n)
                 continue
             if grad:
                 values[i] = value[idir]
@@ -450,6 +473,100 @@ class MeshWithBoundaryElement(Mesh):
             res += e.postCalculateX(x)
             
         return res
+        
+class MeshWithGapElement(Mesh):
+    """
+    Mesh with gap elements
+    """
+    def __init__(self, nHarmonic = 10):
+        """
+        Initialize mesh with gap elements
+        Beside element's list, we need another list for boundary elements
+        """
+        Mesh.__init__(self)
+        self.GapElements = []
+        self.NBe = 0
+        self.nHarmonic = nHarmonic
+        self.polar = True
+        
+    def addGapElement(self, Element):
+        """
+        add boundary element to mesh
+        Notice that Element is also added to Elements list
+        Input:
+            Element: element to be added
+        """
+        self.addElement(Element)
+        try:
+            self.GapElements.append(Element)
+        except Exception:
+            self.GapElements = []
+            self.GapElements.append(Element)
+        self.NBe += 1
+        
+    def addGapElements(self, elements):
+        try:
+            for e in elements:
+                self.addGapElement(e)
+        except TypeError:
+            self.addGapElement(elements)
+    
+    def setNumberHarmonic(self, nHarmonic):
+        """
+        set number of harmonics
+        """
+        self.nHarmonic = nHarmonic
+        
+    def setRadiusRatio(self, rRatio):
+        """
+        set ratio between inner and outer radius
+        """
+        self.rRatio = rRatio
+        
+    def setMaterialConstant(self, mconst):
+        """
+        set material constant
+        """
+        self.matConst = mconst
+        
+    def generateID(self):
+        if self.Nodes is None or len(self.Nodes) == 0:
+            raise EmptyMesh
+        cntu = 0
+        cntd = -1
+        for i in range(self.Nnod):
+            cntu, cntd = self.Nodes[i].setID(cntu,cntd)
+        
+        if self.nHarmonic > 0:
+            self.harmonicsIDa = []
+            self.harmonicsIDb = []
+            self.harmonicsIDc = []
+            self.harmonicsIDd = []
+            for i in range(1,self.nHarmonic+1):
+                self.harmonicsIDa.append(cntu)
+                cntu += 1
+                self.harmonicsIDb.append(cntu)
+                cntu += 1
+                self.harmonicsIDc.append(cntu)
+                cntu += 1
+                self.harmonicsIDd.append(cntu)
+                cntu += 1
+        
+        self.Neq = cntu
+        self.NeqD = -cntd - 1
+        
+    def calculateHarmonicsMatrix(self, data):
+        vGlob = data.KtL
+        for i in range(self.nHarmonic):
+            vGlob[self.harmonicsIDa[i],self.harmonicsIDa[i]]=-(i+1)*np.pi*\
+            self.matConst*(1.0-self.rRatio**(2*(i+1)))
+            vGlob[self.harmonicsIDb[i],self.harmonicsIDb[i]]=-(i+1)*np.pi*\
+            self.matConst*(1.0-self.rRatio**(2*(i+1)))
+            vGlob[self.harmonicsIDc[i],self.harmonicsIDc[i]]=-(i+1)*np.pi*\
+            self.matConst*(1.0-self.rRatio**(2*(i+1)))
+            vGlob[self.harmonicsIDd[i],self.harmonicsIDd[i]]=-(i+1)*np.pi*\
+            self.matConst*(1.0-self.rRatio**(2*(i+1)))
+            
 
 def get_connections(mesh):
     """
@@ -493,16 +610,37 @@ def refine_list(x, min_res):
         else:
             i += 1
             
-def nodes_from_meshgrid(X, Y):
+def nodes_from_meshgrid(X, Y, polar=False):
     """
     create list of nodes of meshgrid X,Y from numpy function meshgrid
     """
     nodes = []
-    for i,y in enumerate(Y):
-        for j,yi in enumerate(y):
-            nodes.append(GNode([X[i][j],yi],2))
+    if not polar:
+        for i,y in enumerate(Y):
+            for j,yi in enumerate(y):
+                nodes.append(GNode([X[i][j],yi],2))
+    else:
+        for i,y in enumerate(Y):
+            for j,yi in enumerate(y):
+                nodes.append(PolarNode([X[i][j],yi],2))
             
     return nodes
+    
+def findNodeNearX(Nodes, x):
+    """
+    find the nearest node in Nodes to coordinate x
+    """
+    if Nodes is None:
+        return None, -1
+    min_dist = 1.0e15
+    min_i = -1
+    for i,n in enumerate(Nodes):
+        dist = np.linalg.norm(n.getX()-x)
+        if dist < min_dist:
+            min_dist = dist
+            min_i = i
+            
+    return Nodes[min_i], min_i
 
 class EmptyMesh(Exception):
     """

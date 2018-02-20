@@ -35,8 +35,8 @@ class GaussianQuadrature(IntegrationData):
                 somewhere before the call to iterator
         """
         ng = np.array(Ng)
-        if ng.size < ndim:
-            raise Exception()
+#        if ng.size < ndim:
+#            raise Exception()
         if ndim < 1 and ndim > 3:
             raise UnsupportedGaussQuadrature
         self.Ng = ng
@@ -61,7 +61,10 @@ class GaussianQuadrature(IntegrationData):
         self.iter_index += 1
         if self.Ndim == 1:
             return self.xg[idx], self.wg[idx]
-        return self.xg[:,idx], self.wg[:,idx]
+        try:
+            return self.xg[:,idx], self.wg[:,idx]
+        except IndexError:
+            return self.xg[:,idx], self.wg[idx]
         
     def s_iter(self, op):
         """
@@ -117,6 +120,33 @@ class GaussianQuadrature(IntegrationData):
             xg3, wg3 = gen(self.Ng[2])
             self.xg = np.array(list(it.product(xg1,xg2,xg3))).transpose()
             self.wg = np.array(list(it.product(wg1,wg2,xg3))).transpose()
+
+class GaussianQuadratureOnEdge(GaussianQuadrature):
+    def __init__(self, Ng, gen, edg):
+        GaussianQuadrature.__init__(self,Ng,2,None)
+        self.edg = edg
+        if edg == 1:
+            xg1, wg1 = gen(self.Ng[0])
+            xg2 = np.ones(self.Ng[1],'float64')
+            xg2 *= -1.0
+            wg2 = np.ones(self.Ng[1],'float64')
+        elif edg == 3:
+            xg1, wg1 = gen(self.Ng[0])
+            xg2 = np.ones(self.Ng[1],'float64')
+            wg2 = np.ones(self.Ng[1],'float64')
+        elif edg == 2:
+            xg2, wg2 = gen(self.Ng[0])
+            xg1 = np.ones(self.Ng[1],'float64')
+            wg1 = np.ones(self.Ng[1],'float64')
+        elif edg == 4:
+            xg2, wg2 = gen(self.Ng[0])
+            xg1 = np.ones(self.Ng[1],'float64')
+            xg1 *= -1.0
+            wg1 = np.ones(self.Ng[1],'float64')
+        else:
+            raise ValueError
+        self.xg = np.array(list(it.product(xg1,xg2))).transpose()
+        self.wg = np.array(list(it.product(wg1,wg2))).transpose()
 
 def integrateGauss(func, xb, xe, xg, wg):
     Jacobi = (xe-xb)/2.0

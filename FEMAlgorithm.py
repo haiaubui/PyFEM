@@ -12,17 +12,21 @@ class Algorithm(object):
     """
     Algorithm class stores properties and methods for algorithms
     """
-    def __init__(self, Mesh, timeOrder, output, solver, dtype = 'float64'):
+    def __init__(self, Mesh, timeOrder, outputs, solver, dtype = 'float64'):
         """
         Initialize algorithm
         Input:
             Mesh: mesh to be analysed
             timeOrder: order of differential equation in time
-            output: the output to write data
+            outputs: the outputs to write data
             solver: matrix solver
         """
         self.dtype = dtype
-        self.output = output
+        self.output = outputs
+        if isinstance(outputs, (list, tuple)):
+            self.outputPool = True
+        else:
+            self.outputPool = False
         self.solver = solver
         self.mesh = Mesh
         self.timeOrder = timeOrder
@@ -182,7 +186,11 @@ class Algorithm(object):
             
     def prepareElements(self):
         for e in self.mesh.getElements():
-            e.prepareElement()
+            try:
+                e.prepareElement()
+            except AttributeError:
+                continue
+
         
     def updateValues(self):
         """
@@ -232,7 +240,20 @@ class Algorithm(object):
         if self.timeOrder > 0:
             self.DL.fill(0.0)
         for i,element in enumerate(self.mesh):
-            element.calculate(self,linear=True)       
+            if not element.current:
+                element.calculate(self,linear=True)                   
+        try:
+            self.mesh.calculateHarmonicsMatrix(self)
+        except AttributeError:
+            pass
+        
+    def calculateLinearCurrentMatrices(self):
+        """
+        calculate linear parts of matrices at current configuration
+        """
+        for i,element in enumerate(self.mesh):
+            if element.current:
+                element.calculate(self,linear=True)
             
     def addLinearMatrices(self):
         
@@ -252,6 +273,26 @@ class Algorithm(object):
         except:
             pass
         self.Ri += self.RiL
+        
+    def outputData(self):
+        """
+        write data to ouputs
+        """
+        if self.outputPool:
+            for ou in self.output:
+                ou.outputData(self)
+        else:
+            self.output.outputData(self)
+            
+    def finishOutput(self):
+        """
+        finish writing data to outputs
+        """
+        if self.outputPool:
+            for ou in self.output:
+                ou.finishOutput()
+        else:
+            self.output.finishOutput()
             
     def calculate(self):
         """

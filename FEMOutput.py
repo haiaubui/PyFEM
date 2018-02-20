@@ -54,6 +54,124 @@ class FileOutput(FEMOutput):
         Close output file
         """
         self.file.close()
+        
+class HarmonicsOutput(FileOutput):
+    """
+    Output harmonics paramereters to file
+    """
+    def outputData(self, data):
+        """
+        write data to output file
+        """
+        try:
+            if data.mesh.nHarmonic < 0:
+                return
+        except AttributeError:
+            return
+        outstr = 'Time '+str(data.getTime())+' NH '+str(data.mesh.nHarmonic)
+        self.file.write(outstr+'\n')
+        for i in range(data.mesh.nHarmonic):
+            outstr = str(data.U[data.mesh.harmonicsIDa[i]])+' '
+            outstr += str(data.U[data.mesh.harmonicsIDb[i]])+' '
+            outstr += str(data.U[data.mesh.harmonicsIDc[i]])+' '
+            outstr += str(data.U[data.mesh.harmonicsIDd[i]])+'\n'
+            self.file.write(outstr)
+    
+    @staticmethod
+    def __read_hdr__(file):
+        hdr = file.readline()
+        ex = Exception('The file is corrupted or false formatted!')
+        if hdr == '':
+            raise EOFError
+        hdr = hdr.split()
+        if hdr[0] != 'Time':
+            raise ex
+        try:
+            time = float(hdr[1])
+        except Exception:
+            raise ex
+        if hdr[2] != 'NH':
+            raise ex
+        try:
+            numHar = int(hdr[3])
+        except Exception:
+            raise ex
+        return time,numHar
+    
+    @staticmethod
+    def __nextStep__(file, step, prev = -1):
+        for i in range(step-prev-1):
+            time,numHar = HarmonicsOutput.__read_hdr__(file)
+            for har in range(numHar):
+                file.readline()
+            
+    
+    @staticmethod
+    def __readOneStep__(file):
+        time,numHar = HarmonicsOutput.__read_hdr__(file)
+        res = []
+        for har in range(numHar):
+            try:
+                dat = file.readline().split()
+            except AttributeError:
+                break
+            res.append(np.array([float(a) for a in dat]))
+        return time, res
+    
+    @staticmethod        
+    def readOutput(filen, timeStep = 0):
+        """
+        This function read the ouput file that was produced by 
+        this output class
+        Input:
+            filen: name of output file
+            timeStep:
+                scalar: read the specific time step
+                list, tuple: read the time steps in list or tuple
+                'all': read all time steps
+        Return:
+            list of numpy array
+        """
+        __max_allowed_steps__ = 1000000
+        file = open(filen,'r')
+            
+        alltime = True and timeStep == 'all'
+        res = []
+        time = []
+        if alltime:
+            i = 0
+            while i < __max_allowed_steps__:
+                i += 1
+                try:
+                    t,r = HarmonicsOutput.__readOneStep__(file)
+                    time.append(t)
+                    res.append(r)
+                except EOFError:
+                    file.close()
+                    return time, res
+            file.close()
+            return time,res
+        else:
+            asc = isAscending(timeStep)
+            prev = -1
+            for step in timeStep:
+                if not asc:
+                    file.seek(0)
+                try:
+                    HarmonicsOutput.__nextStep__(file,step,prev)
+                    t,r = HarmonicsOutput.__readOneStep__(file)
+                except EOFError:
+                    file.close()
+                    return time, res
+                time.append(t)
+                res.append(r)
+                if asc:
+                    prev = step
+            file.close()
+            return time, res
+                
+                
+    
             
 class StandardFileOutput(FileOutput):
     """
@@ -194,7 +312,13 @@ class StandardFileOutput(FileOutput):
                     res.append(v)
                 elif val == 'a':
                     a = list(float(x) for x in line[4+Ndof*2:4+Ndof*3])
+                    if len(a) == 0:
+                        file.close()
+                        raise Exception
                     res.append(a)
+                elif val == 'all':
+                    al = list(float(x) for x in line[1:-1])
+                    res.append(al)
                 else:
                     file.close()
                     raise Exception('Cannot read '+val+' in this file')
@@ -222,9 +346,9 @@ class StandardFileOutput(FileOutput):
                 'v': read velocity v
                 'a': read acceleration a
                 'x': read coordinates of nodes
+                'all': everything
         Return:
-            specific time step: numpy array
-            other cases: list of numpy array
+            list of numpy array
         """
         file = open(filen,'r')
         Nnod, ti, timeOrder = StandardFileOutput.readHeader(file)
@@ -265,14 +389,21 @@ class StandardFileOutput(FileOutput):
         """
         update output data to mesh at a specific time step
         """
-        resu,_ = StandardFileOutput.readOutput(self.outfile,istep)
+        StandardFileOutput.updateMesh(self.outfile,mesh,istep)
+    
+    @staticmethod            
+    def updateMesh(file, mesh, istep = 0):
+        """
+        update output data to mesh at a specific time step
+        """
+        resu,_ = StandardFileOutput.readOutput(file,istep)
         try:
-            resv,_ = StandardFileOutput.readOutput(self.outfile,istep,val='v')
-        except:
+            resv,_ = StandardFileOutput.readOutput(file,istep,val='v')
+        except Exception:
             resv = None
         try:
-            resa,_ = StandardFileOutput.readOutput(self.outfile,istep,val='a')
-        except:
+            resa,_ = StandardFileOutput.readOutput(file,istep,val='a')
+        except Exception:
             resa = None
         nodes = mesh.getNodes()
         for i,n in enumerate(nodes):
@@ -282,7 +413,11 @@ class StandardFileOutput(FileOutput):
                 n.setV(resv[i])
         if resa is not None:
             for i,n in enumerate(nodes):
-                n.setA(resa[i])
+                try:
+                    n.setA(resa[i])
+                except ValueError:
+                    print('error here')
+                    raise ValueError
     
     def getValueInElement(self, mesh, e, x, isteps = 0, val='u'):
         """
@@ -297,7 +432,7 @@ class StandardFileOutput(FileOutput):
                     n.setU(resu[i][j])
                 resuu.append(e.values_at(x,val))
             return resuu
-        except:
+        except Exception:
             resu,tout =StandardFileOutput.readOutput(self.outfile,i,IT,val)
             for j,n in enumerate(e.getNodes()):
                 n.setU(resu[i][j])
@@ -319,6 +454,18 @@ def gotoLine(file, lineno):
         line = file.readline()
         if line == '':
             raise EOFError
+            
+def isAscending(ar):
+    """
+    check if array is ascending ordered
+    """
+    for i,a in enumerate(ar):
+        try:
+            if a > ar[i+1]:
+                return False
+        except IndexError:
+            return True
+    return True
  
 class NoXStardardFileOutput(StandardFileOutput):
     """
@@ -347,27 +494,43 @@ class NoXStardardFileOutput(StandardFileOutput):
             if data.getTimeOrder() == 2:
                 self.writeA(node)
             self.file.write('\n')
-    def readOutput(file, timeStep = 0, node = 'all', val = 'u'):
-        """
-        This function read the ouput file that was produced by 
-        this output class
-        Input:
-            file: file instance of output file
-            timeStep:
-                scalar: read the specific time step
-                list, tuple: read the time steps in list or tuple
-                'all': read all time steps
-            node:
-                scalar: read at specific node
-                'all': read all nodes
-            val:
-                'u': read displacement u
-                'v': read velocity v
-                'a': read acceleration a
-        Return:
-            specific time step: numpy array
-            other cases: list of numpy array
-        """
-        assert val != 'x','The output does not contain coordinates of nodes'
-        return StandardFileOutput.readOutput(file,timeStep,node,val)
+    
+    def __readNodes(file, node, val, Nnod):
+        res = []
+        allnode = True and isinstance(node, str)
+        somenode = not allnode and isinstance(node, (tuple, list))
+        
+        for i in range(Nnod):            
+            line = file.readline()
+            if line is None:
+                raise EOFError
+            if not allnode:
+                if not somenode:
+                    if node != i:
+                        continue
+                else:
+                    if i not in node:
+                        continue
+            line = line.split()
+            Ndof = int(line[0])
+            try:
+                if val == 'u':
+                    u = list(float(x) for x in line[1:1+Ndof])
+                    res.append(u)
+                elif val == 'v':
+                    v = list(float(x) for x in line[1+Ndof:1+Ndof*2])
+                    res.append(v)
+                elif val == 'a':
+                    a = list(float(x) for x in line[1+Ndof*2:1+Ndof*3])
+                    res.append(a)
+                elif val == 'all':
+                    al = list(float(x) for x in line[1:-1])
+                    res.append(al)
+                else:
+                    file.close()
+                    raise Exception('Cannot read '+val+' in this file')
+            except IndexError:
+                file.close()
+                raise Exception('Cannot read '+val+' in this file')
+        return np.array(res)  
                

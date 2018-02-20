@@ -296,7 +296,7 @@ class Edge(object):
         
         return Quadrilateral([node1,node2,node3,node4])
         
-    def plot(self, fig = None, col = 'xb-'):
+    def plot(self, fig = None, col = 'xb-', projection='rectilinear'):
         """
         plot edge
         """
@@ -304,7 +304,10 @@ class Edge(object):
             fig = pl.figure()
         X1 = self.Nodes[0].getX()
         X2 = self.Nodes[1].getX()
-        pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
+        if projection == 'polar':
+            pl.polar(np.array([X1[1],X2[1]]),np.array([X1[0],X2[0]]),col)
+        else:
+            pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
         return fig
         
     def __str__(self):
@@ -458,7 +461,7 @@ class Polygon(object):
         """
         self.reversed[iedge] = not self.reversed[iedge]
         
-    def addNode(self, node):
+    def addNode(self, node, duplicate = False):
         """
         add node to polygon
         Raise DuplicatedNodes if node is already in polygon
@@ -468,7 +471,7 @@ class Polygon(object):
             self.Nodes = [node]
             return
         assert len(self.Nodes) < self.Nnod, 'Cannot add more node to polygon'
-        if any(node == nodei for nodei in self.Nodes):
+        if any(node == nodei for nodei in self.Nodes) and not duplicate:
             raise DuplicatedNode
             
         self.Nodes.append(node)
@@ -513,12 +516,12 @@ class Polygon(object):
         return None
         
             
-    def plot(self, fig = None, col = 'xb-'):
+    def plot(self, fig = None, col = 'xb-', projection='rectilinear'):
         """
         Plot the polygon
         """
         for e in self.Edges:
-            fig = e.plot(fig, col)
+            fig = e.plot(fig, col, projection)
             
         return fig
         
@@ -635,7 +638,7 @@ class Geometry(object):
         if isinstance(obj, Polygon):
             return obj in self.Poly
             
-    def addNode(self, node):
+    def addNode(self, node, duplicate = False):
         """
         Add node to this geometry
         """
@@ -644,22 +647,22 @@ class Geometry(object):
             self.Nodes = [node]
             self.Nnod = 1
             return
-        if any(node == nodei for nodei in self.Nodes):
+        if any(node == nodei for nodei in self.Nodes) and not duplicate:
             warnmess = 'Node '+str(node)+\
             ' is dupplicated with one node in geometry. Node is not added.'
             warnings.warn(warnmess)
             
         self.Nodes.append(node)
         
-    def addNodes(self, nodes):
+    def addNodes(self, nodes, duplicate = False):
         """
         Add many nodes (a list or tuple) to this geometry
         """
         if isinstance(nodes, (list,tuple)):
             for node in nodes:
-                self.addNode(node)
+                self.addNode(node, duplicate)
         
-    def addEdge(self, edge):
+    def addEdge(self, edge, duplicate = False):
         """
         Add edge to this geometry
         The nodes of this edge will be added to geometry also, if there is no
@@ -687,44 +690,51 @@ class Geometry(object):
                 self.addNode(nodes[1])
             return
         try:
-            if any(edge == edgei for edgei in self.Edges):
+            if any(edge == edgei for edgei in self.Edges) and not duplicate:
                 warnmess = 'Edge '+str(edge)+\
                 ' is dupplicated with one edge in geometry. Edge is not added.'
                 warnings.warn(warnmess)
             else:
-                self.Edges.append(edge)
-                self.Nedge += 1
-                nodes = edge.getNodes()
-                if self.Nnod == 0:
-                    self.addNode(nodes[0])
-                    self.addNode(nodes[1])
-                    return
-                try:
-                    idx = self.Nodes.index(nodes[0])
-                    nodes[0] = self.Nodes[idx]
-                except ValueError:
-                    self.addNode(nodes[0])
-                    
-                try:
-                    idx = self.Nodes.index(nodes[1])
-                    nodes[1] = self.Nodes[idx]
-                except ValueError:
-                    self.addNode(nodes[1])
+                self.__addEdge(edge,duplicate)
                 return
         except NodesOppositeOrder:
-            warnmess = 'Edge '+str(edge)+\
-            ' has one clone edge in geometry,\
-            but the nodes are in opposite order. The edge is not added.'
-            warnings.warn(warnmess)
+            if not duplicate:
+                warnmess = 'Edge '+str(edge)+\
+                ' has one clone edge in geometry,\
+                but the nodes are in opposite order. The edge is not added.'
+                warnings.warn(warnmess)
+            else:
+                self.__addEdge(edge,duplicate)
             
-    def addEdges(self, edges):
+    def __addEdge(self, edge, duplicate):
+        self.Edges.append(edge)
+        self.Nedge += 1
+        nodes = edge.getNodes()
+        if self.Nnod == 0:
+            self.addNode(nodes[0], duplicate)
+            self.addNode(nodes[1], duplicate)
+            return
+        try:
+            idx = self.Nodes.index(nodes[0])
+            nodes[0] = self.Nodes[idx]
+        except ValueError:
+            self.addNode(nodes[0])
+            
+        try:
+            idx = self.Nodes.index(nodes[1])
+            nodes[1] = self.Nodes[idx]
+        except ValueError:
+            self.addNode(nodes[1], duplicate)
+                
+            
+    def addEdges(self, edges, duplicate=False):
         """
         Add many edges (list or tuple) into geometry
         See addEdge for more information
         """
         if isinstance(edges, (list, tuple)):
             for e in edges:
-                self.addEdge(e)
+                self.addEdge(e, duplicate)
             
     def addPolygon(self, poly):
         """
@@ -976,12 +986,12 @@ class Geometry(object):
         return nodes, elem, mat, bdl
     
     def plot(self, fig = None, col = 'xb-', poly_number = False,\
-    edge_number = False, fill_mat = False):
+    edge_number = False, fill_mat = False, projection='rectilinear'):
         """
         Plot the polygon
         """
         for p in self.Poly:
-            fig = p.plot(fig, col)
+            fig = p.plot(fig, col, projection)
             
         if poly_number:
             for i,p in enumerate(self.Poly):
@@ -991,7 +1001,10 @@ class Geometry(object):
         if edge_number:
             for i,e in enumerate(self.Edges):
                 c = e.getCenter()
-                pl.text(c[0],c[1],str(i))
+                if projection == 'polar':
+                    pl.text(c[0]*math.cos(c[1]),c[0]*math.sin(c[1]),str(i))
+                else:
+                    pl.text(c[0],c[1],str(i))
                 
         if fill_mat:
             patches = []
@@ -1000,7 +1013,11 @@ class Geometry(object):
                 if p.getMaterial() is None:
                     continue
                 nodes = p.getNodes()
-                verts = [n.getX() for n in nodes]
+                if projection == 'polar':
+                    verts = [n.getX()[::-1] for n in nodes]
+                else:
+                    verts = [n.getX() for n in nodes]
+#                verts = [n.getX() for n in nodes]
                 patches.append(PlotPoly(verts,closed = True))
                 colors.append(p.getMaterial().getID())
                 
@@ -1008,18 +1025,19 @@ class Geometry(object):
             jet = pl.get_cmap('jet')
             cNorm  = Normalize(vmin=0, vmax=len(self.getMaterials()))
             collection.set_color(jet(cNorm(colors)))
-            ax = fig.add_subplot(111)
+            ax = fig.add_subplot(111,projection=projection)
             ax.add_collection(collection)
             
         pl.gca().set_aspect('equal', adjustable='box')
         return fig                    
                 
-    def plotMesh(self, fig = None, col = 'xb-', fill_mat = False):
+    def plotMesh(self, fig = None, col = 'xb-', fill_mat = False,\
+    projection='rectilinear'):
         """
         Plot the mesh created
         """
         for p in self.Poly:
-            fig = p.plotMesh(fig,col)
+            fig = p.plotMesh(fig,col,projection)
             
         if fill_mat:
             patches = []
@@ -1028,7 +1046,11 @@ class Geometry(object):
                 if p.getMaterial() is None:
                     continue
                 nodes = p.getNodes()
-                verts = [n.getX() for n in nodes]
+                if projection == 'polar':
+                    verts = [n.getX()[::-1] for n in nodes]
+                else:
+                    verts = [n.getX() for n in nodes]
+#                verts = [n.getX() for n in nodes]
                 patches.append(PlotPoly(verts,closed = True))
                 colors.append(p.getMaterial().getID())
                 
@@ -1036,7 +1058,7 @@ class Geometry(object):
             jet = pl.get_cmap('jet')
             cNorm  = Normalize(vmin=0, vmax=len(self.getMaterials()))
             collection.set_color(jet(cNorm(colors)))
-            ax = fig.add_subplot(111)
+            ax = fig.add_subplot(111,projection=projection)
             ax.add_collection(collection)
             
         pl.gca().set_aspect('equal', adjustable='box')
@@ -1160,7 +1182,7 @@ class Quadrilateral(Polygon):
         self.meshPoly = quad
         return quad
                        
-    def plotMesh(self, fig = None, col = 'xb-'):
+    def plotMesh(self, fig = None, col = 'xb-', projection='rectilinear'):
         """
         Plot the mesh created
         """
@@ -1168,7 +1190,7 @@ class Quadrilateral(Polygon):
             self.structuredMesh()
         
         for quad in self.meshPoly:
-            fig = quad.plot(fig,col)
+            fig = quad.plot(fig,col,projection)
             
         return fig        
     

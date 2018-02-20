@@ -417,7 +417,7 @@ class Node(GeneralNode):
         Return value of load
         """
         if self.callPointLoad:
-            return self.load[dof](t)
+            return self.load[dof](self.X_,t)
         return self.load[dof]
         
     def getPointLoadToGlobal(self, Load, t= 0):

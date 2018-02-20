@@ -43,10 +43,10 @@ class CrisfieldElement(FE.Element):
         self.Ndim = ndim
         
     def calculate(self, data, linear = True):
-        Kt = data.getKt()
-        Ktd = data.getKtd()
-        M = data.getM()
-        Md = data.getMd()
+        Kt = data.getKtL()
+        Ktd = data.getKtLd()
+        M = data.getML()
+        Md = data.getMLd()
         
         u = (self.Nodes[1].getX()-self.Nodes[0].getX())
         a = self.material.getEA()/((self.L)**3)
@@ -156,10 +156,10 @@ def build_structure(E,rho,A,H,B1,B2,alpha,beta,timeOrder):
     
     mat1 = TrussMaterial(E,A,rho)
     mat2 = TrussMaterial(alpha*E,A,beta*rho)
-    #element1 = CrisfieldElement([node1,node2],timeOrder,mat2,1)
-    #element2 = CrisfieldElement([node2,node3],timeOrder,mat1,1)
-    element1 = NonlinearCrisfieldElement([node1,node2],timeOrder,mat2,1)
-    element2 = NonlinearCrisfieldElement([node2,node3],timeOrder,mat1,1)
+    element1 = CrisfieldElement([node1,node2],timeOrder,mat2,1)
+    element2 = CrisfieldElement([node2,node3],timeOrder,mat1,1)
+#    element1 = NonlinearCrisfieldElement([node1,node2],timeOrder,mat2,1)
+#    element2 = NonlinearCrisfieldElement([node2,node3],timeOrder,mat1,1)
     #node3.setLoad(-E*A*H**3/(3.0*math.sqrt(3.0)*(element2.L**3)),1)
     
     mesh = TrussMesh(2)
@@ -242,8 +242,8 @@ output = plotOutput(Nstep,mesh.getNeq(),1)
 #mesh.plot()
 #mesh.updateValues(output.getU(),None,None)
 #mesh.plot(init=False,col='r')
-#alg = NM.LinearNewmarkAlgorithm(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
-alg = StructureNonlinearNewmark(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
+alg = NM.LinearNewmarkAlgorithm(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
+#alg = StructureNonlinearNewmark(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
 alg.calculate()
 tarr = np.array(list(range(0,200)))*2.0e-2/200
 pl.plot(tarr,output.U[0,:],'b',tarr,output.U[1,:],'r')

@@ -10,7 +10,7 @@ import numpy as np
 import scipy.special as scs
 import QuadElement as qa
 import FEMBoundary as FB
-import warnings
+#import warnings
 
 class AxisymmetricQuadElement(qa.QuadElement):
     """

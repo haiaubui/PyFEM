@@ -336,7 +336,8 @@ nodeOrder = [[0,1,2,0,1,2,0,1,2],
 #        e.setBodyLoad(loadfunc)
 
 def loadfunc(x,t):
-    return -load*math.sin(8.1e3*2*np.pi*t)
+    #return -load*math.sin(8.1e3*2*np.pi*t)
+    return -load
 
 def create_mesh():
     nodes = []
@@ -380,7 +381,7 @@ def create_mesh():
     mat3 = LinearMagneticMaterial(1.0,1.0,5.0e6,3)
     mat2 = LinearMagneticMaterial(1.0,1.0,0.0,2)
     #mat1 = JAMaterial(5.0e6,9,1)
-    mat1 = LinearMagneticMaterial(100.0,1.0,5.0e6,1)
+    mat1 = LinearMagneticMaterial(1.0,1.0,5.0e6,1)
     for i in range(1,10):
         polys[i].setMaterial(mat1)
         
@@ -471,7 +472,8 @@ def create_simple_mesh():
     
     def loadfunc(t):
         #return load*math.cos(8.1e3*2*np.pi*t)
-        return load*math.cos(8.1e3*2*np.pi*t)
+        #return load*math.cos(8.1e3*2*np.pi*t)
+        return load
     
     mesh.Nodes[4].setLoad(loadfunc,0)
     
@@ -512,6 +514,6 @@ output.updateToMesh(mesh,10)
 #stats.strip_dirs().sort_stats('time').print_stats()
 #
 #
-#_,inod = mesh.findNodeNear(np.array([0.015,0.2]))
-#testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
-#testout = [t[0][0] for t in testout]
+_,inod = mesh.findNodeNear(np.array([0.015,0.0]))
+testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
+testout = [t[0][0] for t in testout]

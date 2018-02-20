@@ -102,6 +102,8 @@ class Element(object):
         self.bodyLoad = None
         self.linear = False
         self.calculateBoundingBox()
+        self.current = False
+        self.movingVel = None
         
     def __str__(self):
         """
@@ -128,6 +130,14 @@ class Element(object):
         
     def __contains__(self, item):
         return item in self.Nodes
+        
+    def setMovingVelocity(self, v):
+        """
+        set prescribed moving velocity
+        v: array, velocities
+        """
+        self.current = True
+        self.movingVel = np.array(v,self.dtype)
         
     def isLinear(self):
         """
@@ -337,18 +347,24 @@ class Element(object):
             if not mechDofs is None:
                 for i in range(len(mechDofs)):
                     self.x_[i] += self.u_[mechDofs[i]]
+            if self.movingVel is not None:
+                for i in range(len(self.movingVel)):
+                    self.x_[i] += self.movingVel[i]*data.deltaT
         
         # calculate gradient of displacement
         self.gradu_.fill(0.0)
-        self.getGradU(self.gradu_,data)
+        try:
+            self.getGradU(self.gradu_,data)
+        except AttributeError:
+            self.getGradUP(self.gradu_)
         
         # calculate velocity
-        if data.getTimeOrder() > 0:
+        if self.timeOrder > 0:
             self.v_.fill(0.0)
             self.getV(self.v_)
             
         # calculate acceleration
-        if data.getTimeOrder() == 2:
+        if self.timeOrder == 2:
             self.a_.fill(0.0)
             self.getA(self.a_)
             
@@ -362,7 +378,7 @@ class Element(object):
             n.updateV(vGlobal)
             n.updateA(aGlobal)
 
-    def setBodyLoad(self, loadfunc):
+    def setBodyLoad(self, loadfunc, id_b = 0):
         """
         set body load function
         """
@@ -371,6 +387,7 @@ class Element(object):
         assert callable(loadfunc),\
         'Body Load must be a function of position and time'
         self.bodyLoad = loadfunc
+        self.id_bodyLoad = id_b
         
     def getBodyLoad(self, t):
         """
@@ -383,6 +400,15 @@ class Element(object):
                 print(self.bodyLoad)
         else:
             return 0.0
+            
+    def hasBodyLoad(self):
+        """
+        Check if element has body load
+        """
+        try:
+            return self.bodyLoad is not None
+        except AttributeError:
+            return False
             
     def setMaterial(self, mat):
         """
@@ -407,7 +433,7 @@ class Element(object):
 
 class StandardElement(Element):
     """
-    Quadrilateral Element
+    Standard Quadrilateral Element
     This is super class for further derivations
     """
     def __init__(self, Nodes, pd, basisFunction, nodeOrder, material, intData,\
@@ -515,23 +541,50 @@ class StandardElement(Element):
                                 if self.timeOrder == 2:
                                     self.M[inod][jnod].connect((idof,jdof),\
                                     mGlobD,(id1,-id2-2))
-    
+
         
+    
     def getFactor(self):
         return self.factor[self.ig]
         
-    def Jacobian(self, dN_):
+    def Jacobian(self, dN_, coord = 'r', edg = False):
         """
         Calculate det(J) and modify dN_
+        coord = 'r' : Cartesian coordinates (default) (deprecated)
+                'c' : cylindrical coordinates x[0] = r, x[1] = phi, x[2] = z
+                's' : sphercial coordinates x[0] = r, x[1] = phi, x[2] = theta
         return det(J)
         """
         __tempJ__ = np.zeros((self.Ndim,self.Ndim),self.dtype)
         
         Jmat = np.zeros((self.Ndim,self.Ndim),self.dtype)
+#        if coord == 'r':
         for i in range(self.Nnod):
             #np.outer(self.Nodes[i].getX(),dN_[:,i],temp)
             np.outer(dN_[:,i],self.Nodes[i].getX(),__tempJ__)
             Jmat += __tempJ__
+#        elif coord == 'c':
+#            for i in range(self.Nnod):
+#                x = self.Nodes[i].getX()
+#                x[1] *= x[0]
+#                np.outer(dN_[:,i],x,__tempJ__)
+#                Jmat += __tempJ__
+#        elif coord == 's':
+#            for i in range(self.Nnod):
+#                x = self.Nodes[i].getX()
+#                x[1] *= x[0]
+#                try:
+#                    x[2] *= x[0]*math.sin(x[1])
+#                except:
+#                    pass
+#                np.outer(dN_[:,i],x,__tempJ__)
+#                Jmat += __tempJ__
+#        else:
+#            raise ValueError
+        
+        if edg:
+            self.detEdg1 = math.sqrt(Jmat[0,0]**2+Jmat[1,0]**2)
+            self.detEdg2 = math.sqrt(Jmat[0,1]**2+Jmat[1,1]**2)
         
         det = __determinant__(Jmat)
         if np.allclose(det,0.0,rtol = 1.0e-14):
@@ -783,6 +836,8 @@ class StandardElement(Element):
         """
         Calculate body load
         """
+        if not self.hasBodyLoad():
+            return
         vGlob = data.getRe()
         vGlobD = None
         #vGlobD = data.getRiD()
@@ -804,6 +859,52 @@ class StandardElement(Element):
                     assembleVector(vGlob, vGlobD, R, self.Nodes[i])
                 except AttributeError:
                     pass
+                
+    def integrate(self, intFunc, res, intData = None, edg = False):
+        """
+        Integrate intFunc over element
+        store result in res
+        return res
+        """
+        if intData is None:
+            GaussPoints = self.intData
+        
+            for self.ig in range(GaussPoints.Npoint):
+                self.getBasis()
+                self.getAllValues(None)
+                self.material.calculate(self)
+                res += intFunc(self)
+            return res
+        else:
+            if edg:
+                edgn = intData.edg
+            N = np.zeros(self.Nnod,self.dtype)
+            dN = np.zeros((self.Ndim,self.Nnod),self.dtype)
+            for xg,wg in intData:
+                self.basisND(xg,N,dN)
+                detJ = self.Jacobian(dN,edg)
+                if edg:
+                    if edgn == 2 or edgn == 4:
+                        wei = self.detEdg2*np.prod(wg)
+                    else:
+                        wei = self.detEdg1*np.prod(wg)
+                else:
+                    wei = detJ*np.prod(wg)
+                self.x_.fill(0.0)
+                self.getX(self.x_,N)
+                self.u_.fill(0.0)
+                self.getU(self.u_,N)
+                if self.timeOrder > 0:
+                    self.v_.fill(0.0)
+                    self.getV(self.v_,N)
+                if self.timeOrder == 2:
+                    self.a_.fill(0.0)
+                    self.getA(self.a_,N)
+                self.gradu_.fill(0.0)
+                self.getGradUP(self.gradu_,dN)
+                self.material.calculate(self)
+                res += intFunc(self)*wei
+            return res
     
     def calculate(self, data, linear = False):
         """
@@ -1032,6 +1133,8 @@ def assembleMatrix(mGlob, mGlobD, mLoc, iNode, jNode):
                 elif jdx < -1:
                     mGlobD[idx,-jdx-1] += mLoc[i,j]
                     
+
+                    
 def assembleVector(vGlob, vGlobD, vLoc, iNode):
     """
     Assemble a local vector to global vector
@@ -1086,5 +1189,67 @@ def __determinant__(mat):
         mat[2,1] = h/det
         mat[2,2] = i/det
         return det
+        
+def find_node_from_order(inod, jnod, nodes, nodeOrder):
+    """
+    return the node has order [inod,jnod]
+    """        
+    for i in range(len(nodes)):
+        if nodeOrder[0][i] == inod and nodeOrder[1][i] == jnod:
+            return nodes[i],i
+            
+    raise ValueError    
+    
+def lineIntegrate(nodes, basisFunc, material, intFunc, intData,\
+ res, co='cart'):
+    """
+    Integrate over line or edge
+    Input:
+          nodes: list or tuple of nodes
+          basisFunc: basis function N,dN = basisFunc(xi)
+          material: material parameters
+          intFunc: function to be integrated 
+                   res = intFunc(N,dN,x,u,v,gradu,mat,w,res)
+          intData: quadrature data (normally Gaussian points)
+          res: result
+          co: coordinates system
+              'cart': cartesian
+              'polar': polar
+    """
+    nnod = len(nodes)
+    ndim = nodes[0].Ndim
+    N = np.zeros(nnod,'float64')
+    dN = np.zeros(nnod,'float64')
+    dN_ = np.zeros((ndim,nnod),'float64')
+    if co == 'polar':
+        loop = [0]*nnod
+        for i in range(1,nnod):
+            phi1 = nodes[i].getX(loop[i])[1]
+            phi0 = nodes[i-1].getX(loop[i-1])[1]
+            if phi1 < phi0:
+                loop[i] = 1
+        X = np.array([n.getX(loop[i]).tolist() for i,n in enumerate(nodes)])
+    else:
+        X = np.array([n.getX().tolist() for n in nodes])
+        
+    U = np.array([n.getU().tolist() for n in nodes])
+    V = np.array([n.getV().tolist() for n in nodes])
+    for xg,wg in intData:
+        basisFunc(xg,nnod-1,N,dN)
+        dX_dxi = np.dot(dN,X)
+        x = np.dot(N,X)
+        u = np.dot(N,U)
+        v = np.dot(N,V)
+        dN_.fill(0.0)
+        if math.fabs(dX_dxi[0]) > 1.0e-15:
+            dN_[0,:] = dN/dX_dxi[0]
+        if math.fabs(dX_dxi[1]) > 1.0e-15:
+            dN_[1,:] = dN/dX_dxi[1]
+        gradu = np.dot(dN_,U)
+        w = wg*math.sqrt(dX_dxi[0]**2 + dX_dxi[1]**2)
+        res = intFunc(N,dN,x,u,v,gradu,material,w,res)
+        
+    return res
+        
         
     

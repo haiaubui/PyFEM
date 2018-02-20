@@ -70,6 +70,7 @@ class GeneralizedAlphaAlgorithm(FA.DynamicAlgorithm):
         """
         generate external load
         """
+        np.copyto(self.__tempR__,self.Re)
         self.Re.fill(0.0)
         if not self.time_depend_load and self.istep > 0:
             return
@@ -87,6 +88,18 @@ class GeneralizedAlphaAlgorithm(FA.DynamicAlgorithm):
                 node.assembleV(self.v_n)
             if self.timeOrder == 2:
                 node.assembleA(self.a_n)
+                
+    def calculateExternalBodyLoad(self):
+        for e in self.mesh.getElements():
+            try:
+                e.calculateBodyLoad(self)
+            except AttributeError:
+                continue
+        if self.istep == 0:
+            return
+        self.Re *= (1.0-self.alpha_f)
+        self.__tempR__ *= self.alpha_f
+        self.Re += self.__tempR__
     
     def NewmarkApproximation(self, vn1, an1):
         """
@@ -199,36 +212,83 @@ class LinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
         if self.timeOrder == 2:
             v += c*self.a_n
             a = d*self.u_n + e*self.v_n + f*self.a_n
-        self.Ri = np.dot(self.Kt,self.alpha_f*self.u_n)
+            
+        self.Ri.fill(0.0)
+        self.Ri += self.Re
+        self.Ri -= np.dot(self.Kt,self.alpha_f*self.u_n)
         self.Ri += np.dot(self.D,v)
         if self.timeOrder == 2:
             self.Ri += np.dot(self.M,a)
             
+    def addLinearMatrices(self):
+        
+#        self.Kt.fill(0.0)
+#        self.Kt += self.KtL
+        np.copyto(self.Kt,self.KtL)
+       
+        try:
+#            self.D.fill(0.0)
+#            self.D += self.DL
+            np.copyto(self.D,self.DL)
+        except:
+            pass
+        try:
+#            self.M.fill(0.0)
+#            self.M += self.ML
+            np.copyto(self.M,self.ML)
+        except:
+            pass
+        
     def calculate(self):
         """
         start analysis
-        """
+        """        
         print("Start Analysis")
         self.prepareElements()
+        self.connect()
+        self.check_point_load()
         self.calculateParameters()
         self.initialConditions()
-        self.calculateMatrices()
-        self.calculateKEffect()
+        np.copyto(self.u_n1,self.u_n)
+        vn1 = np.empty(self.Neq)
+        an1 = None
+        if self.timeOrder == 2:
+            an1 = np.empty(self.Neq)
+#        self.generateExternalLoad()
+#        self.calculateExternalBodyLoad()
+        self.calculateLinearMatrices()
+        if not self.mesh.current:
+            self.addLinearMatrices()
+            self.calculateKEffect()
         # loop over time steps
-        for self.istep in range(self.numberSteps):
+        for self.istep in range(1,self.numberSteps+1):
             print("Time step "+str(self.istep))
-            self.generateExternalLoad()
+            if self.mesh.current:
+                self.calculateLinearCurrentMatrices()
+                self.addLinearMatrices()
+                self.calculateKEffect()
+            self.generateExternalLoad()            
+            self.calculateExternalBodyLoad()
             self.calculateREffect()
+            
+#            self.NewmarkApproximation(vn1,an1)
+#            self.midpointApproximation(vn1,an1)
             # solve system
             self.u_n1 = self.solver.solve(self.Kt,self.Ri)
+            
+            self.NewmarkApproximation(vn1,an1)
             np.copyto(self.U,self.u_n1)
-            self.NewmarkApproximation(self.v_n,self.a_n)
-            np.copyto(self.V,self.v_n)
-            np.copyto(self.A,self.a_n)
             np.copyto(self.u_n,self.u_n1)
-            self.output.outputData(self)
+            try:
+                np.copyto(self.v_n,vn1)
+                np.copyto(self.V,vn1)
+                np.copyto(self.a_n,an1)
+                np.copyto(self.A,an1)
+            except TypeError:
+                pass
+            self.outputData()
         print("Finished!")
-        self.output.finishOutput()
+        self.finishOutput()
         
 class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
     """
@@ -252,12 +312,19 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
         Check if solution converged
         Return True if converged, False otherwise
         """
+        nrmdeltaU = np.linalg.norm(self.Ri)
         if self.toltype == 0:
-            eta = np.linalg.norm(self.Ri)/np.linalg.norm(self.u_n1-self.u_n)
+            eta = nrmdeltaU/np.linalg.norm(self.u_n1-self.u_n)
             self.eta = eta
             print('eta = '+str(eta))
         if (eta <= self.tol):
             return True
+        # deltaU is too small, the nonconvergence is due to floating point
+        # error
+        nrmU = np.linalg.norm(self.u_n1)
+        eta = nrmdeltaU/nrmU
+        if (eta <= 1.0e-14):
+            raise FloatingPointError
         return False
         
     def getMaxNumberIter(self):
@@ -281,12 +348,16 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
         an1 = None
         if self.timeOrder == 2:
             an1 = np.empty(self.Neq)
+        self.generateExternalLoad()
+        self.calculateExternalBodyLoad()
         # loop over time steps
         self.calculateLinearMatrices()
         for self.istep in range(1,self.numberSteps+1):
             print("Time step "+str(self.istep))
             self.generateExternalLoad()
             self.calculateExternalBodyLoad()
+            self.calculateLinearCurrentMatrices()
+            #print('Re',np.linalg.norm(self.Re))
             # loop over iterations
             for iiter in range(self.Niter):
                 self.NewmarkApproximation(vn1,an1)
@@ -294,12 +365,18 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
                 #self.updateValues()
                 self.calculateMatrices()
                 self.addLinearMatrices()
+                #print(np.linalg.norm(self.Ri))
                 self.calculateKEffect()
                 self.calculateREffect()
                 
                 self.solver.isolve(self.Kt,self.Ri)
                 self.u_n1 += self.Ri
-                if self.isConverged():
+                try:
+                    if self.isConverged():
+                        break
+                except FloatingPointError:
+                    self.eta = 0.0
+                    print("Increment is smaller than round off error")
                     break
             if self.eta <= self.tol:
                 print("Converged with eta = " + str(self.eta))
@@ -310,14 +387,14 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
             np.copyto(self.u_n,self.u_n1)
             try:
                 np.copyto(self.v_n,vn1)
-                np.copyto(self.a_n,an1)
                 np.copyto(self.V,vn1)
+                np.copyto(self.a_n,an1)
                 np.copyto(self.A,an1)
             except TypeError:
                 pass
-            self.output.outputData(self)
+            self.outputData()
         print("Finished!")
-        self.output.finishOutput()
+        self.finishOutput()
 
 
 class LinearNewmarkAlgorithm(LinearAlphaAlgorithm):
@@ -359,3 +436,4 @@ class NotConverged(Exception):
     Exception for convergence
     """              
     pass
+
