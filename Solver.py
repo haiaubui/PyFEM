@@ -56,11 +56,20 @@ class numpySolver(Solver):
         This method is often used in nonlinear algorithms
         """
         try:
-            #a = np.linalg.solve(A,b)
-            #np.copyto(b,a)
-            la.solve(A,b,overwrite_a = True, overwrite_b = True)
+            a = np.linalg.solve(A,b)
+            np.copyto(b,a)
+#            la.solve(A,b,overwrite_a = True, overwrite_b = True)
         except la.LinAlgError:
             raise SingularMatrix
+            
+    def LDLdiag(self, A):
+        """
+        return D of LDLdecomposition
+        """
+        return np.diag(la.cholesky(A))
+    
+    def LUdecomp(self, A):
+        return la.lu(A)
             
 class SingularMatrix(Exception):
     """

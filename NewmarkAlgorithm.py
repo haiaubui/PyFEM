@@ -381,7 +381,7 @@ class NonlinearAlphaAlgorithm(GeneralizedAlphaAlgorithm):
             if self.eta <= self.tol:
                 print("Converged with eta = " + str(self.eta))
             else:
-                raise NotConverged
+                raise FA.NotConverged
             self.NewmarkApproximation(vn1,an1)
             np.copyto(self.U,self.u_n1)
             np.copyto(self.u_n,self.u_n1)
@@ -431,9 +431,5 @@ class NonlinearNewmarkAlgorithm(NonlinearAlphaAlgorithm):
         self.beta = 1.0/(self.rho_inf+1.0)/(self.rho_inf+1.0)
         self.gamma = (3.0-self.rho_inf)/(2.0*self.rho_inf+2.0)    
                 
-class NotConverged(Exception):
-    """
-    Exception for convergence
-    """              
-    pass
+
 

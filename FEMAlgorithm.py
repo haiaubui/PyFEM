@@ -90,6 +90,14 @@ class Algorithm(object):
             if node.hasNonHomogeneousDirichlet():
                 self.NonhomogeneousDirichlet = True
                 break
+            
+        self.istep = 0
+        
+    def getCurrentStep(self):
+        """
+        Return current time step
+        """
+        return self.istep
         
     def getMesh(self):
         """
@@ -182,7 +190,10 @@ class Algorithm(object):
                 
     def calculateExternalBodyLoad(self):
         for e in self.mesh.getElements():
-            e.calculateBodyLoad(self)
+            try:
+                e.calculateBodyLoad(self)
+            except AttributeError:
+                continue
             
     def prepareElements(self):
         for e in self.mesh.getElements():
@@ -207,7 +218,7 @@ class Algorithm(object):
         processes can be ignored
         """
         for n in self.mesh.getNodes():
-            n.connect(self.U,self.V,self.A)
+            n.connect(self.U,self.V,self.A,self.Ud)
         
         try:
             for e in self.mesh.getElements():
@@ -221,6 +232,7 @@ class Algorithm(object):
         calculate non linear parts of matrices required for calculation
         """
         self.Kt.fill(0.0)
+        self.Ktd.fill(0.0)
         if self.timeOrder == 2:
             self.M.fill(0.0)
         if self.timeOrder > 0:
@@ -324,13 +336,6 @@ class DynamicAlgorithm(Algorithm):
         self.totalTime = totalTime
         self.numberSteps = numberTimeSteps
         self.deltaT = self.totalTime/self.numberSteps
-        self.istep = 0
-        
-    def getCurrentStep(self):
-        """
-        Return current time step
-        """
-        return self.istep
         
     def getTime(self):
         """
@@ -364,4 +369,10 @@ class LinearStaticAlgorithm(StaticAlgorithm):
         # write data to output
         self.output.outputData(self)
         self.output.finishOutput()
-        
+
+
+class NotConverged(Exception):
+    """
+    Exception for convergence
+    """              
+    pass        

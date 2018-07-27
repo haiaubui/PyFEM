@@ -231,7 +231,8 @@ class Edge(object):
         Npoint = ndiv - 1
         assert Npoint >= 0, 'Number of division points added must be positive'
         if Npoint == 0:
-            self.divNodes = self.Nodes
+#            self.divNodes = self.Nodes
+#            self.divNodes = []
             self.divEdges = self
             return
         self.Ndiv = Npoint
@@ -840,6 +841,7 @@ class Geometry(object):
         # create list of edge that cover materials
         coveredges = []
         normvec = []
+        covermat = []
         for m in polymat:
             for p in m:
                 edges = p.getEdges()
@@ -848,14 +850,17 @@ class Geometry(object):
                     try:
                         idx = coveredges.index(e)
                         coveredges.pop(idx)
+                        covermat.pop(idx)
                         normvec.pop(idx)
                     except ValueError:
                         coveredges.append(e)
+                        covermat.append(p.getMaterial())
                         normvec.append(e.getNormalVector(cp))
                     except NodesOppositeOrder:
                         ex = e.makeReversedEdge()
                         idx = coveredges.index(ex)
                         coveredges.pop(idx)
+                        covermat.pop(idx)
                         normvec.pop(idx)
 #                    try:
 #                        if e not in coveredges:
@@ -868,6 +873,7 @@ class Geometry(object):
         # add divisions of each edge to list of elements
         self.bndMesh = []
         self.normBndVec = []
+        self.bndMat = []
         for i,e in enumerate(coveredges):
             e.divideSections(e.Ndiv+1)
             me = e.getDivEdges()
@@ -877,6 +883,7 @@ class Geometry(object):
                         if de not in self.bndMesh:
                             self.bndMesh.append(de)
                             self.normBndVec.append(normvec[i])
+                            self.bndMat.append(covermat[i])
                     except NodesOppositeOrder:
                         pass
             except TypeError:
@@ -884,10 +891,12 @@ class Geometry(object):
                     if me not in self.bndMesh:
                         self.bndMesh.append(me)
                         self.normBndVec.append(normvec[i])
+                        self.bndMat.append(covermat[i])
                 except NodesOppositeOrder:
                     pass
                 
-    def getBoundaryMesh(self, nodeFunc, nodeElemFunc, Ndof, nodes = None):
+    def getBoundaryMesh(self, nodeFunc, nodeElemFunc, Ndof, nodes = None,\
+                        get_mat=False):
         """
         Creates nodes and list of element nodes from boundary mesh
         Input:
@@ -896,6 +905,7 @@ class Geometry(object):
             found in nodes, it will be skipped
             Ndof: number of degree of freedom in each node
             nodeElemFunc: function that create nodes for each element
+            get_mat: return list of material of each element
         Return:
             modified list of nodes created by nodeFunc
             list of list of nodes in boundary elements
@@ -929,7 +939,9 @@ class Geometry(object):
                     else:
                         elem[-1][i] = nf(nodesx[i].getX())
                     nodes.append(elem[-1][i])
-                    
+        
+        if get_mat:
+            return nodes, elem, self.normBndVec, self.bndMat
         return nodes, elem, self.normBndVec
         
     def mesh(self, structure = True, elm_type = 'Quad'):
@@ -1326,6 +1338,7 @@ def clockwise(nodes):
             prevclw = clw
             
     return prevclw
+
 
 class NonConvex(Exception):
     pass

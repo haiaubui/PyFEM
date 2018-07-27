@@ -45,6 +45,7 @@ class AxisymmetricQuadElement(qa.QuadElement):
         Return: factor for integration, 2*pi*radius*det(J)
         """
         return 2*np.pi*self.x_[0]*self.factor[self.ig]
+#        return self.factor[self.ig]
         
 class AxisymmetricStaticBoundary(FB.StandardStaticBoundary):
     """
@@ -84,29 +85,58 @@ class AxisymmetricStaticBoundary(FB.StandardStaticBoundary):
             #raise Exception('False elliptic integral')
         
     def postCalculateF(self, N_, dN_, factor, res):
+        idofA = 0
+        idofJ = 1
         r = self.x_[0]
-        k1 = self.u_[0]*\
+        k1 = self.u_[idofA]*\
         (self.normv[0]*self.gradG[0]+self.normv[1]*self.gradG[1])
         k1 *= factor
-        k1 += self.u_[0]*self.G*self.normv[0]*factor/r
-        k2 = self.u_[1]*self.G
+        k1 += self.u_[idofA]*self.G*self.normv[0]*factor/r
+        k2 = self.u_[idofJ]*self.G
         k2 *= factor
-        res += k1 + k2
+        res += (k1 + k2)
+#        k1 = self.u_[idofA]*np.dot(self.normv,self.gradG)*factor
+#        k2 = -self.u_[idofJ]*self.G*factor
+#        res += k1 + k2
+        
         
     def subCalculateKLinear(self, K, element, i, j):
         #if np.allclose(element.xx_[0],0.0,rtol = 1.0e-14):
         #    K.fill(0.0)
         #    return
+        idofA = 0
+        idofJ = 1
+#        wfac = self.getFactor()*2.0*np.pi*self.x_[0]
         wfac = self.getFactor()
         wfact = element.getFactorX(element.detJ)
         wfacx = element.getFactorXR(element.detJ)
-        K[1,0] = self.N_[i]*element.Nx_[j]*\
+        Nx_ = element.Nx_[j]
+        K[idofJ,idofA] = self.N_[i]*Nx_*\
         (element.normv[0]*self.gradG[0]+element.normv[1]*self.gradG[1])
-        K[1,0] *= wfac*wfacx
-        K[1,0] += self.N_[i]*element.Nx_[j]*self.G*\
+        K[idofJ,idofA] *= wfac*wfacx
+        K[idofJ,idofA] += self.N_[i]*Nx_*self.G*\
         element.normv[0]*wfac*wfact/element.xx_[0]
-        K[1,1] = self.N_[i]*element.Nx_[j]*self.G
-        K[1,1] *= wfac*wfact
+#        K[idofJ,idofA] += self.N_[i]*element.Nx_[j]*self.G*\
+#        element.normv[0]*wfac*wfact
+        K[idofJ,idofJ] = self.N_[i]*Nx_*self.G
+        K[idofJ,idofJ] *= wfac*wfact
+        
+#        K[idofJ,idofA] /= self.material.mu00
+#        K[idofJ,idofJ] /= self.material.mu00
+#        mu0 = self.material.mu00
+#        r = self.x_[0]
+#        K[idofA,idofJ] = self.N_[i]*element.Nx_[j]
+#        K[idofA,idofJ] *= np.dot(element.normv,self.gradG)
+#        K[idofA,idofJ] *= wfac*wfacx*2.0*np.pi*r/mu0
+#        K[idofJ,idofA] = K[idofA,idofJ]
+#        
+#        K[idofA,idofA] = -np.einsum('i,ij,j',self.normv,self.grgrG,\
+#         element.normv)
+#        K[idofA,idofA] *= self.N_[i]*element.Nx_[j]
+#        K[idofA,idofA] *= wfac*wfacx*2.0*np.pi*r/mu0
+#        
+#        K[idofJ,idofJ] = -self.N_[i]*element.Nx_[j]*self.G
+#        K[idofJ,idofJ] *= wfac*wfact*2.0*np.pi*r/mu0
         
 #    def subCalculateR(self, R, element, i):
 #        #if np.allclose(element.xx_[0],0.0,rtol = 1.0e-14):
@@ -123,6 +153,17 @@ class AxisymmetricStaticBoundary(FB.StandardStaticBoundary):
 #        r1 *= wfac*wfact
 #        R[1] += (r0 + r1)
                 
+class AxiSymNeumann(FB.NeumannBoundary):
+    """
+    Neumann boundary condition in Axisymmetric case
+    """
+    def getFactor(self):
+        """
+        Return: factor for integration, 2*pi*radius*det(J)
+        """
+        return 2*np.pi*self.x_[0]*self.factor[self.ig]
+    
+
         
 class DimensionMismatch(Exception):
     """

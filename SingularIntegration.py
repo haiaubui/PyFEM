@@ -81,8 +81,27 @@ def Gaussian_1D_rat(t, ng):
     x,w = Idat.Gaussian1D(ng)
     w1 = np.zeros(ng)
     for i in range(ng):
-        for j in range(ng-1):
+        for j in range(ng):
             w1[i] += (2.0*j+1.0)*poly_Legendre(x[i],j)*Legendre_Qn(t,j)
+        w1[i] *= w[i]
+        
+    return x, w1
+
+def Gaussian_1D_rat2(t, ng):
+    """
+    Gaussian quadrature points and weights for rational function 1/|x-t|
+    integration
+    """
+    x,w = Idat.Gaussian1D(ng)
+    w1 = np.zeros(ng)
+    for i in range(ng):
+        for j in range(ng):
+            if j != ng-1:
+                for k in range(j,math.ceil((ng+j-3)/2)):
+                    w1[i] -= (2*j+1)*(4*k+3-2*i)*Legendre_Qn(t,j)*\
+                    poly_Legendre(x[i],2*k+1-i)
+            w1[i] += (2.0*j+1.0)/2*poly_Legendre(x[i],j)*\
+            (1.0/(t-1.0) - ((-1.0)**j)/(t+1))
         w1[i] *= w[i]
         
     return x, w1
@@ -123,6 +142,14 @@ def integration_PnRat(t, pn):
         y += w[i]*poly_Legendre(x[i],pn)
         
     return y
+
+def integration_PnRat2(t, pn):
+    x,w = Gaussian_1D_rat2(t, 20)
+    y = 0.0
+    for i in range(20):
+        y += w[i]*poly_Legendre(x[i],pn)
+        
+    return y
     
 def Gaussian_1D_Pn_Log_Rat(t, ng, m = -1):
     if m <= 0:
@@ -144,8 +171,32 @@ def Gaussian_1D_Pn_Log_Rat(t, ng, m = -1):
     w1,_,_,_ = np.linalg.lstsq(xi, mi)
     return x, w1
 
+def Gaussian_1D_Pn_Log_Rat_Rat2(t, ng, m = -1):
+    if m <= 0:
+        m = math.ceil(ng/3)
+    x,_ = Idat.Gaussian1D(ng)
+    xi = np.empty((4*m,ng))
+    mi = np.zeros(4*m)
+    mi[0] = 2.0
+    
+    for i in range(m):
+        for j in range(ng):
+            pol = poly_Legendre(x[j],i)
+            xi[i,j] = pol
+            xi[i+m,j] = pol*math.log(math.fabs(x[j]-t))
+            xi[i+2*m,j] = pol/(t-x[j])
+            xi[i+3*m,j] = pol/((t-x[j])**2)
+        mi[i+m] = integration_PnLog(t,i)
+        mi[i+2*m] = integration_PnRat(t,i)
+        mi[i+3*m] = integration_PnRat2(t,i)
+        
+    w1,_,_,_ = np.linalg.lstsq(xi, mi)
+    return x, w1
+
 
 def poly_Legendre(x, n):
+    if n < 0:
+        return 1.0
     p = scs.legendre(n)
     return p(x)
     

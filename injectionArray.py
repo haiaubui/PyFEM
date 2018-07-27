@@ -99,9 +99,39 @@ class injectArray(object):
         return s
         
     def __getitem__(self, k):
+        try:
+            datx = np.empty((k[0].stop-k[0].start,k[0].stop-k[0].start),\
+                            self.dtype)
+            for i in range(k[0].start,k[0].stop):
+                for j in range(k[1].start,k[1].stop):
+                    datx[i,j] = self.data[i,j][0]
+                    
+            return datx
+        except TypeError:
+            try:
+                datx = np.empty(k.stop-k.start,self.dtype)
+                for i in range(k.start,k.stop):
+                    datx[i] = self.data[i][0]
+                return datx
+            except AttributeError:
+                pass
+        except AttributeError:
+            pass
         return self.data[k][0]
         
     def __setitem__(self, k, val):
+        try:
+            for i in range(k[0].start,k[0].stop):
+                for j in range(k[1].start,k[1].stop):
+                    self.data[i,j][0] = val[i,j]
+        except TypeError:
+            try:
+                for i in range(k.start,k.stop):
+                    self.data[i][0] = val[i]
+            except AttributeError:
+                pass
+        except AttributeError:
+            pass
         self.data[k][0] = val
         
     def __iadd__(self, other):   
@@ -291,6 +321,10 @@ class injectArray(object):
         return self.__div__(other)
         
     def connect(self, k, A, ka):
+        """
+        connect indices k of this array to corresponding indices ka of array A
+        array A must be a Numpy array
+        """
         if isinstance(ka,(list,np.ndarray,tuple)):
             A[ka[0],ka[1]] = self.data[k][0]
             self.data[k] = A[ka[0]:ka[0]+1,ka[1]:ka[1]+1]

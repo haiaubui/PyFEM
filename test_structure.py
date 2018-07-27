@@ -14,6 +14,7 @@ import FEMMesh as FM
 import FEMOutput as FO
 import Material as mat
 import NewmarkAlgorithm as NM
+import NewtonRaphson as NR
 import Solver as sv
 
 # Material
@@ -129,8 +130,10 @@ class TrussMesh(FM.Mesh):
                         X = e.getNodes()[inod].getX()
                         X1 = e.getNodes()[inod+1].getX()
                     else:
-                        X = e.getNodes()[inod].getX() + e.getNodes()[inod].getU()
-                        X1 = e.getNodes()[inod+1].getX() +e.getNodes()[inod+1].getU()
+                        X = e.getNodes()[inod].getX() +\
+                        e.getNodes()[inod].getU().toNumpy()
+                        X1 = e.getNodes()[inod+1].getX() +\
+                        e.getNodes()[inod+1].getU().toNumpy()
                     xc = np.array([X[0],X1[0]])
                     if self.Ndim == 2:
                         yc = np.array([X[1],X1[1]])
@@ -152,15 +155,17 @@ def build_structure(E,rho,A,H,B1,B2,alpha,beta,timeOrder):
     node3 = FN.Node([B1,H],2,timeOrder)
     node3.setConstraint(False, 0.0, 0)
     node3.setConstraint(True, 0.0, 1)
+#    node3.setConstraint(False,-0.05,1)
     
     
     mat1 = TrussMaterial(E,A,rho)
     mat2 = TrussMaterial(alpha*E,A,beta*rho)
-    element1 = CrisfieldElement([node1,node2],timeOrder,mat2,1)
-    element2 = CrisfieldElement([node2,node3],timeOrder,mat1,1)
-#    element1 = NonlinearCrisfieldElement([node1,node2],timeOrder,mat2,1)
-#    element2 = NonlinearCrisfieldElement([node2,node3],timeOrder,mat1,1)
-    #node3.setLoad(-E*A*H**3/(3.0*math.sqrt(3.0)*(element2.L**3)),1)
+#    element1 = CrisfieldElement([node1,node2],timeOrder,mat2,1)
+#    element2 = CrisfieldElement([node2,node3],timeOrder,mat1,1)
+    element1 = NonlinearCrisfieldElement([node1,node2],timeOrder,mat2,1)
+    element2 = NonlinearCrisfieldElement([node2,node3],timeOrder,mat1,1)
+    node3.setLoad(-2.0*E*A*H**3/(3.0*math.sqrt(3.0)*(element2.L**3)),1)
+    
     
     mesh = TrussMesh(2)
     mesh.addNode(node1)
@@ -171,12 +176,12 @@ def build_structure(E,rho,A,H,B1,B2,alpha,beta,timeOrder):
     mesh.generateID()
     return mesh
 
-timeOrder = 2    
+timeOrder = 0    
 mesh = build_structure(2.0e7,1.0,1.0,0.7,1.0,0.1,100,100,timeOrder)
-mesh.Nodes[1].setU([0.050633741721625,0.0])
-mesh.Nodes[2].setU([0.0,0.574573486600207])
-mesh.Nodes[1].setA([0.041777453220745e6,0.0])
-mesh.Nodes[2].setA([0.0,-6.650981196224420e6])
+#mesh.Nodes[1].setU([0.050633741721625,0.0])
+#mesh.Nodes[2].setU([0.0,0.574573486600207])
+#mesh.Nodes[1].setA([0.041777453220745e6,0.0])
+#mesh.Nodes[2].setA([0.0,-6.650981196224420e6])
 
 # Output
 class plotOutput(FO.FEMOutput):
@@ -185,10 +190,13 @@ class plotOutput(FO.FEMOutput):
         self.Neq = Neq
         self.U = np.zeros((Neq,Nstep))
         self.timeOrder = timeOrder
+        self.load = np.zeros(Nstep)
         if timeOrder > 0:
             self.V = np.zeros((Neq,Nstep))
         if timeOrder == 2:
             self.A = np.zeros((Neq,Nstep))
+        self.st_points = []
+        self.st_u = []
             
     def getU(self, istep=0):
         if self.U.ndim == 1:
@@ -209,15 +217,18 @@ class plotOutput(FO.FEMOutput):
         
     def outputData(self,data):
         if self.timeOrder == 0:
-            if data.getTimeOrder() > 0:
-                self.U[:,data.getCurrentStep()] = data.getU()
-            else:
-                self.U = data.getU()
+            self.U[:,data.getCurrentStep()] = data.getU()
+            self.load[data.getCurrentStep()]= data.lmd
+
         if self.timeOrder > 0:
             self.U[:,data.getCurrentStep()-1] = data.getU()
             self.V[:,data.getCurrentStep()-1] = data.getV()
             if self.timeOrder == 2:
                 self.A[:,data.getCurrentStep()] = data.getA()
+                
+    def outputStability(self,lmd,u):
+        self.st_points.append(lmd)
+        self.st_u.append(u)
 
 class StructureNonlinearNewmark(NM.NonlinearAlphaAlgorithm):
     def calculateREffect(self):
@@ -234,17 +245,26 @@ class StructureNonlinearNewmark(NM.NonlinearAlphaAlgorithm):
             self.Ri -= self.__tempR__
 
 # Algorithm
-Nstep = 200
+Nstep = 100
 time = 2.0e-2
-output = plotOutput(Nstep,mesh.getNeq(),1)
+#output = plotOutput(Nstep,mesh.getNeq(),1)
+output = plotOutput(Nstep,mesh.getNeq(),0)
 #static = FA.LinearStaticAlgorithm(mesh,output,sv.numpySolver())
 #static.calculate()
 #mesh.plot()
 #mesh.updateValues(output.getU(),None,None)
 #mesh.plot(init=False,col='r')
-alg = NM.LinearNewmarkAlgorithm(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
+#alg = NM.LinearNewmarkAlgorithm(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
+#alg = NR.LoadControlledNewtonRaphson(mesh,output,sv.numpySolver(),100)
+alg = NR.ArcLengthControlledNewtonRaphson(mesh,output,sv.numpySolver(),Nstep,\
+                                          arcl=2.0)
+#alg.enableVariableConstraint()
 #alg = StructureNonlinearNewmark(mesh,2,output,sv.numpySolver(),time,Nstep,1.0)
-alg.calculate()
-tarr = np.array(list(range(0,200)))*2.0e-2/200
-pl.plot(tarr,output.U[0,:],'b',tarr,output.U[1,:],'r')
+alg.calculate(False)
+#tarr = np.array(list(range(0,200)))*2.0e-2/200
+#pl.plot(tarr,output.U[0,:],'b',tarr,output.U[1,:],'r')
+
+#tarr = np.array(list(range(0,100)))*0.6/100
+#pl.plot(output.U[1,:],tarr)
+pl.plot(output.U[0,:],output.load)
     

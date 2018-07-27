@@ -8,6 +8,7 @@ Created on Fri Nov 10 11:40:01 2017
 import numpy as np
 import pylab as pl
 import math
+import sympy as syp
 #import scipy.linalg as la
 import injectionArray as ia
 
@@ -104,6 +105,8 @@ class Element(object):
         self.calculateBoundingBox()
         self.current = False
         self.movingVel = None
+        self.expr = [] # sympy expressions and corresponding parameters
+        self.lmdfy = []# lambdified version of expr
         
     def __str__(self):
         """
@@ -130,6 +133,12 @@ class Element(object):
         
     def __contains__(self, item):
         return item in self.Nodes
+    
+    def addExpression(self, expr, parm):
+        exprx = syp.sympify(expr)
+        parmx = (syp.sympify(p) for p in parm)
+        self.expr.append((exprx,parmx))
+        self.lmdfy.append(syp.lambdify(parmx,exprx,'numpy'))
         
     def setMovingVelocity(self, v):
         """
@@ -238,6 +247,8 @@ class Element(object):
         try:
             for i in range(self.Nnod):
                 x += self.Nodes[i].getX()*N_[i]
+        except ValueError:
+            print('here')
         except TypeError:
             raise ElementBasisFunctionNotCalculated
         
@@ -406,7 +417,7 @@ class Element(object):
         Check if element has body load
         """
         try:
-            return self.bodyLoad is not None
+            return (self.bodyLoad is not None) or ('calculateRe' in dir(self))
         except AttributeError:
             return False
             
@@ -503,11 +514,18 @@ class StandardElement(Element):
                 if self.timeOrder == 2:
                     self.M[i].append(ia.zeros((self.Ndof,self.Ndof),self.dtype))
     
-    def connect(self, rGlob, rGlobD, kGlob, kGlobD,\
-    dGlob, dGlobD, mGlob, mGlobD):
+    def connect(self, *arg):
         """
         Connect local matrices to global matrices
         """        
+        rGlob = arg[0]
+        rGlobD = arg[1]
+        kGlob = arg[2]
+        kGlobD = arg[3]
+        dGlob = arg[4]
+        dGlobD = arg[5]
+        mGlob = arg[6]
+        mGlobD = arg[7]
         for inod in range(self.Nnod):
             ids1 = self.Nodes[inod].getID()
             for idof in range(self.Ndof):
@@ -522,7 +540,7 @@ class StandardElement(Element):
                     id1 = ids1[idof]
                     if id1 >= 0:
                         for jdof in range(self.Ndof):
-                            id2 = ids2[idof]
+                            id2 = ids2[jdof]
                             if id2 >= 0:
                                 self.K[inod][jnod].connect((idof,jdof),kGlob,\
                                 (id1,id2))
@@ -686,6 +704,7 @@ class StandardElement(Element):
         N_ = self.Ns_[0]
         dN_ = self.dNs_[0]
         self.basisND(x,N_,dN_)
+        self.Jacobian(dN_)
         if val == 'u':
             #u_ = np.zeros(self.Ndof,self.dtype)
             self.u_.fill(0.0)
@@ -840,18 +859,26 @@ class StandardElement(Element):
             return
         vGlob = data.getRe()
         vGlobD = None
-        #vGlobD = data.getRiD()
+#        vGlobD = data.getRiD()
         
         GaussPoints = self.intData
         R = np.zeros(self.Ndof,self.dtype)
         self.ig = -1
-        t = data.getTime()
+        try:
+            t = data.getTime()
+        except AttributeError:
+            t = 0.0
+            pass
             
         # loop over Gaussian points
         for xg, wg in GaussPoints:
             self.ig += 1
             self.getBasis()
             self.getAllValues(data)
+            try:
+                self.calculateFES()
+            except AttributeError:
+                pass
             self.material.calculate(self)
             for i in range(self.Nnod):
                 try:
@@ -916,7 +943,10 @@ class StandardElement(Element):
         """
         # Get matrices from data
         timeOrder = data.getTimeOrder()
-        t = data.getTime()
+        try:
+            t = data.getTime()
+        except AttributeError:
+            t = 0.0
         if linear:
             vGlob = data.getRiL()
             vGlobD = data.getRiLD()
@@ -959,6 +989,10 @@ class StandardElement(Element):
             
             # Calculate coordinate at current Gaussian point
             self.getAllValues(data)
+            try:
+                self.calculateFES()
+            except AttributeError:
+                pass
             
             # Initialize matrices
             #self.initializeMatrices()
@@ -1000,7 +1034,6 @@ class StandardElement(Element):
                     except AttributeError:
                         pass
                 continue
-            
             # loop over node i            
             for i in range(self.Nnod):
                 # calculate and assemble load vector
@@ -1044,24 +1077,35 @@ class StandardElement(Element):
                 except (AttributeError, TypeError):
                     pass
                 
-    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None,\
+             deformed = False, deformed_factor=1.0 ):
         """
         Default plot method
         This method simply plot the nodes continuously
         Derived classes should override this method to get desired shape
+        deformed: plot deformed structure, the DOFs of deformations are always
+        from 0:Ndim
         """
+        d_fact = deformed_factor
         if fig is None:
             fig = pl.figure()
-        x = [n.getX()[0] for n in self.Nodes]
+        if not deformed:
+            x = [n.getX()[0] for n in self.Nodes]
+        else:
+            x = [n.getX()[0] + d_fact*n.getU()[0] for n in self.Nodes]
         if self.Ndim > 1:
-            y = [n.getX()[1] for n in self.Nodes]
+            if not deformed:
+                y = [n.getX()[1] for n in self.Nodes]
+            else:
+                y = [n.getX()[1] + d_fact*n.getU()[1] for n in self.Nodes]
         #if self.Ndim == 3:
         #    z = [n.getX()[2] for n in self.Nodes]
         if self.Ndim == 1:
-            return pl.plot(np.array(x),col),[n.getX() for n in self.Nodes]
+            pl.plot(np.array(x),col)
+            return fig,[n.getX() for n in self.Nodes]
         if self.Ndim == 2:
-            return pl.plot(np.array(x),np.array(y),col),\
-            [n.getX() for n in self.Nodes]
+            pl.plot(np.array(x),np.array(y),col)
+            return fig,[n.getX() for n in self.Nodes]
         if self.Ndim == 3:
             """
             Will be implemented later
@@ -1131,7 +1175,7 @@ def assembleMatrix(mGlob, mGlobD, mLoc, iNode, jNode):
                 if jdx >= 0:
                     mGlob[idx,jdx] += mLoc[i,j]
                 elif jdx < -1:
-                    mGlobD[idx,-jdx-1] += mLoc[i,j]
+                    mGlobD[idx,-jdx-2] += mLoc[i,j]
                     
 
                     
@@ -1153,7 +1197,7 @@ def assembleVector(vGlob, vGlobD, vLoc, iNode):
         if idx >= 0:
             vGlob[idx] += vLoc[i]
         elif idx < -1:
-            vGlobD[-idx - 1] += vLoc[i]
+            vGlobD[-idx - 2] += vLoc[i]
     
 def __determinant__(mat):
     if mat.shape == (2,2):

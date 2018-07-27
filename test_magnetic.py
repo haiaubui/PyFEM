@@ -21,6 +21,7 @@ import IntegrationData as idat
 import MeshGenerator as mg
 import cProfile
 import pstats
+import NewtonRaphson as NR
         
 class LinearMagneticMaterial(mat.Material):
     def __init__(self, mur, epsr, sigma, idx):
@@ -314,7 +315,7 @@ def findNode(nodes,id_number):
     raise Exception()
 
 Ndof = 1             
-tOrder = 2
+tOrder = 0
 Ng = [3,3]
 totalTime = 1.0e-3
 numberTimeSteps = 100
@@ -449,17 +450,25 @@ def create_simple_mesh():
     edge = mg.Edge(nodes[0],nodes[1])
     poly = edge.extendToQuad(np.array([0.0,1.0]),1.0)
     
+    
     geo = mg.Geometry()
     geo.addPolygon(poly)
     
+    poly.setDivisionEdge13(4)
+    
     mat2 = LinearMagneticMaterial(100.0,1.0,5.0e6,2)
     poly.setMaterial(mat2)
+    
     
     geo.mesh()
     [nodesx, elems, mats, bdls] = geo.getMesh(None,mg.nodesQuad9,2)
     for n in nodesx:
         if math.fabs(n.getX()[0]-0.0)<1.0e-14:
             n.setConstraint(False, 0.0, 0)
+        if math.fabs(n.getX()[1])<1.0e-14 or math.fabs(n.getX()[1]-1.0)<1.0e-14:
+            n.setConstraint(False, 10*0.5*n.getX()[0],0)
+        if math.fabs(n.getX()[0]-1.0)<1.0e-14:
+            n.setConstraint(False, 10*0.5*n.getX()[0],0)
     elements = []
     for i,e in enumerate(elems):
         m = mats[i]
@@ -475,7 +484,7 @@ def create_simple_mesh():
         #return load*math.cos(8.1e3*2*np.pi*t)
         return load
     
-    mesh.Nodes[4].setLoad(loadfunc,0)
+#    mesh.Nodes[4].setLoad(loadfunc,0)
     
     return mesh
         
@@ -489,7 +498,8 @@ def create_simple_mesh():
 #mtest = np.array([matx.calculateX(b) for b in btest])
 #pl.plot((btest/(np.pi*4.0e-7)-mtest),mtest)
 
-mesh = create_mesh()
+#mesh = create_mesh()
+mesh = create_simple_mesh()
 
 #cnt = 0
 #for e in mesh.Elements:
@@ -501,12 +511,14 @@ mesh = create_mesh()
 mesh.generateID()      
 
 output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
-alg = NM.NonlinearNewmarkAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
-totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+#alg = NM.NonlinearNewmarkAlgorithm(mesh,tOrder,output,sv.numpySolver(),\
+#totalTime, numberTimeSteps,rho_inf,tol=1.0e-8)
+
+alg = NR.LoadControlledNewtonRaphson(mesh,output,sv.numpySolver(),1)
 
 alg.calculate()
 
-output.updateToMesh(mesh,10)
+#output.updateToMesh(mesh,10)
 #X,Y,Z = mesh.meshgridValue([0.0,0.2,-0.2,0.2],0.01,1.0e-8)
 #
 #cProfile.run('alg.calculate()','calculate.profile')
@@ -514,6 +526,6 @@ output.updateToMesh(mesh,10)
 #stats.strip_dirs().sort_stats('time').print_stats()
 #
 #
-_,inod = mesh.findNodeNear(np.array([0.015,0.0]))
-testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
-testout = [t[0][0] for t in testout]
+#_,inod = mesh.findNodeNear(np.array([0.015,0.0]))
+#testout,tout = output.readOutput('/home/haiau/Documents/result.dat',list(range(50)),inod,'v')
+#testout = [t[0][0] for t in testout]

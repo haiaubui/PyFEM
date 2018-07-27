@@ -158,20 +158,27 @@ class Mesh(object):
         self.Neq = cntu
         self.NeqD = -cntd - 1
         
+        for n in self.Nodes:
+            if (n.friendNode is not None) and (n.friendDOF > -1):
+                n.ID[n.friendDOF] = n.friendNode.ID[n.friendDOF]
+        
     def plot(self, fig = None, col = '-b', fill_mat = False, e_number = False,\
-    n_number = False, body_load=False):
+    n_number = False, body_load=False, deformed = False, deformed_factor=1.0):
         """
         plot the mesh
         """
+        dfact = deformed_factor
         patches = []
         colors = []
         max_mat = 0
         has_2dim = False
         for i,e in enumerate(self.Elements):
             if e_number:
-                fig,nodes = e.plot(fig, col, number = i)
+                fig,nodes = e.plot(fig, col, number = i, deformed = deformed,\
+                                   deformed_factor=dfact)
             else:
-                fig,nodes = e.plot(fig, col)
+                fig,nodes = e.plot(fig, col, deformed = deformed, \
+                                   deformed_factor=dfact)
             if (fill_mat and e.Ndime == 2) or (body_load and e.hasBodyLoad()):
                 has_2dim = True
                 if self.polar:
@@ -179,7 +186,10 @@ class Mesh(object):
                     [np.array([n.getX(e.loop[i])[1],n.getX(e.loop[i])[0]])\
                     for i,n in enumerate(nodes)]
                 else:
-                    verts = [n.getX() for n in nodes]
+                    if not deformed:
+                        verts = [n.getX() for n in nodes]
+                    else:
+                        verts = [n.getX() + dfact*n.getU()[0:2] for n in nodes]
                 patches.append(PlotPoly(verts,closed=True))
                 if fill_mat:
                     m_id = e.getMaterial().getID()
@@ -236,13 +246,19 @@ class Mesh(object):
         res: resolution of grid, maximum distance in grid
         min_res: minimum distance between points in grid
         """
+        if isinstance(res, (list,np.ndarray,tuple)):
+            res0 = res[0]
+            res1 = res[1]
+        else:
+            res0 = res
+            res1 = res
         anchors = []
         for n in self.Nodes:
             if n.isInside(boders):
                 anchors.append(n)
                 
-        x = np.arange(boders[0],boders[1]+res*0.5,res).tolist()
-        y = np.arange(boders[2],boders[3]+res*0.5,res).tolist()
+        x = np.arange(boders[0],boders[1]+res0*0.5,res0).tolist()
+        y = np.arange(boders[2],boders[3]+res1*0.5,res1).tolist()
         for n in anchors:
             x_ = n.getX()
             x.append(x_[0])
@@ -287,16 +303,36 @@ class Mesh(object):
         grad = val == 'gradu'
         for i,n in enumerate(nodes):
             try:
-                value = self.getValue(n.getX(),val)[idof]                
+                value = self.getValue(n.getX(),val)               
             except OutsideMesh:
                 #print(n)
                 continue
             if grad:
-                values[i] = value[idir]
+                values[i] = value[idir][idof]
             else:
-                values[i] = value
+                values[i] = value[idof]
             
         return X,Y,values.reshape(X.shape)
+    
+    def meshgridStrain(self, boders, res, min_res, dofx, dofy):
+        """
+        Get mesh grid and stress within boders
+        """
+        nodes,X,Y = self.meshgrid(boders,res,min_res)
+        ndim = nodes[0].Ndim
+        values = np.empty((len(nodes),ndim,ndim))
+        for i,n in enumerate(nodes):
+            values[i,:,:].fill(np.nan)
+            try:
+                value = self.getValue(n.getX(),'gradu')
+            except OutsideMesh:
+                continue
+            valuex = value[:,(dofx,dofy)]
+            strain = 0.5*(valuex + valuex.T) + np.dot(valuex,valuex.T) 
+            values[i,:,:] = strain
+            
+        return X,Y,values[:,0,0].reshape(X.shape),\
+            values[:,0,1].reshape(X.shape),values[:,1,1].reshape(X.shape)    
         
     def meshValue(self, meshx, meshy, val = 'u', idof=0, idir = 0):
         """
@@ -403,12 +439,68 @@ class MeshWithBoundaryElement(Mesh):
         return number of boundary elements
         """
         return self.NBe
+    
+    def meshgrid(self, boders, res, min_res):
+        """
+        Create grid from within boders.
+        Return list of grid nodes that can be used for post processing.
+        boders = [left, right, under, upper]
+        res: resolution of grid, maximum distance in grid
+        min_res: minimum distance between points in grid
+        """
+        if isinstance(res, (list,np.ndarray,tuple)):
+            res0 = res[0]
+            res1 = res[1]
+        else:
+            res0 = res
+            res1 = res
+        anchors = []
+        for n in self.Nodes:
+            if n.isInside(boders):
+                anchors.append(n)
+                
+        self.nanPoints = []
+        for e in self.BoundaryElements:
+            for n in e.Nodes:
+                if not n.isInside(boders):
+                    continue
+                nx = n.copyToPosition(n.getX()+1.0e-8*e.normv)
+                if nx not in anchors:
+                    anchors.append(nx)
+                    self.nanPoints.append(nx)
+                
+        x = np.arange(boders[0],boders[1]+res0*0.5,res0).tolist()
+        y = np.arange(boders[2],boders[3]+res1*0.5,res1).tolist()
+        for n in anchors:
+            x_ = n.getX()
+            x.append(x_[0])
+            y.append(x_[1])
+            
+        x.sort()
+        y.sort()
+                
+        refine_list(x, min_res)
+        refine_list(y, min_res)
+                
+        X,Y = np.meshgrid(x,y)
+        nodes = nodes_from_meshgrid(X, Y, self.polar)
+        for e in self.BoundaryElements:
+            for n in nodes:
+                try:
+                    if e.distanceToPoint(n.getX())<1.0e-7:
+                        if n not in self.nanPoints:
+                            self.nanPoints.append(n)
+                except FB.InsideElement:
+                    continue
+        return nodes,X,Y
+    
         
     def plot(self, fig = None, col = '-b', fill_mat = False, e_number = False,\
-    n_number = False):
+    n_number = False, deformed = False, deformed_factor=1.0):
         """
         plot the mesh
         """
+        dfact = deformed_factor
         patches = []
         colors = []
         max_mat = 0
@@ -418,11 +510,16 @@ class MeshWithBoundaryElement(Mesh):
             else:
                 col1 = col
             if e_number:
-                fig,nodes = e.plot(fig, col1, number = i)
+                fig,nodes = e.plot(fig, col1, number = i, deformed = deformed,\
+                                   deformed_factor=dfact)
             else:
-                fig,nodes = e.plot(fig, col1)
+                fig,nodes = e.plot(fig, col1, deformed = deformed,\
+                                   deformed_factor=dfact)
             if fill_mat and e.Ndime == 2:
-                verts = [n.getX() for n in nodes]
+                if not deformed:
+                    verts = [n.getX() for n in nodes]
+                else:
+                    verts = [n.getX() + dfact*n.getU()[0:2] for n in nodes]
                 patches.append(PlotPoly(verts,closed=True))
                 m_id = e.getMaterial().getID()
                 colors.append(m_id)
@@ -433,7 +530,7 @@ class MeshWithBoundaryElement(Mesh):
             for i,node in enumerate(self.Nodes):
                 pl.text(node.getX()[0],node.getX()[1],str(i))        
                 
-        if fill_mat and e.Ndime == 2:
+        if fill_mat:
             collection = PatchCollection(patches)
             jet = pl.get_cmap('jet')
             cNorm  = Normalize(vmin=0, vmax=max_mat)
@@ -473,6 +570,68 @@ class MeshWithBoundaryElement(Mesh):
             res += e.postCalculateX(x)
             
         return res
+    
+    def meshValue(self, meshx, meshy, val = 'u', idof=0, idir = 0):
+        """
+        Get values at mesh defined by rectangular mesh meshy and meshy
+        meshx: array, mesh points in x direction
+        meshy: array, mesh points in y direction
+        val: value to be plotted, 'u', 'v', 'a', or 'gradu'
+        idof: index of degree of freedom
+        idir: direction of gradient
+        """
+        X,Y = np.meshgrid(meshx,meshy)
+        nodes = nodes_from_meshgrid(X, Y)
+        values = np.empty(len(nodes),self.Nodes[0].dtype)
+        values.fill(np.nan)
+        grad = val == 'gradu'
+        for i,n in enumerate(nodes):
+            try:
+                if n in self.nanPoints and val == 'u':
+                    value = np.nan
+                else:
+                    value = self.getValue(n.getX(),val)[idof]                
+            except OutsideMesh:
+                print(n)
+                continue
+            if grad:
+                values[i] = value[idir]
+            else:
+                values[i] = value
+            
+        return X,Y,values.reshape(X.shape)
+    
+    def meshgridValue(self, boders, res, min_res, val='u', idof = 0, idir = 0):
+        """
+        Get mesh grid and value within boders
+        boders = [left, right, under, upper]
+        res: resolution of grid, maximum distance in grid
+        min_res: minimum distance between points in grid
+        val: value to be plotted, 'u', 'v', 'a', or 'gradu'
+        idof: index of degree of freedom
+        idir: direction of gradient
+        """
+        nodes,X,Y = self.meshgrid(boders,res,min_res)
+        values = np.empty(len(nodes),self.Nodes[0].dtype)
+        values.fill(np.nan)
+        dummyval = np.zeros(self.Nodes[0].Ndof)
+        grad = val == 'gradu'
+        for i,n in enumerate(nodes):
+            try:
+                if n in self.nanPoints and val == 'u':
+                    dummyval[idof] = np.nan
+                    value = dummyval
+                else:
+                    value = self.getValue(n.getX(),val)               
+            except OutsideMesh:
+                #print(n)
+                continue
+            if grad:
+                values[i] = value[idir][idof]
+            else:
+                values[i] = value[idof]
+            
+        return X,Y,values.reshape(X.shape)
         
 class MeshWithGapElement(Mesh):
     """

@@ -52,6 +52,7 @@ class StandardBoundary(FE.StandardElement):
         self.current = False
         self.G = 0.0
         self.gradG = np.zeros(self.Ndim,dtype)
+        self.gradG0 = np.zeros(self.Ndim,dtype)
         self.Kx = np.zeros((self.Ndof,self.Ndof),self.dtype)
         self.Rx = np.zeros(self.Ndof,self.dtype)
         self.Dx = None
@@ -82,6 +83,36 @@ class StandardBoundary(FE.StandardElement):
         #self.temp_weight = 0.0
         self.sing_int_type = 0
         self.linear = True
+        self.deformed = False
+        self.grgrG = np.zeros((2,2),dtype = self.dtype)
+        self.gr0grG = np.zeros((2,2),dtype = self.dtype)
+        self.tangent = np.cross(np.array(np.array([0.0,0.0,1.0])),\
+                                         [self.normv[0],self.normv[1],0.0],\
+                                         )[0:2]
+        self.tangent /= np.linalg.norm(self.tangent)
+        
+    def distanceToPoint(self, X):
+        X1 = self.Nodes[0].getX()
+        X2 = self.Nodes[-1].getX()
+        y2 = X2[1]
+        x2 = X2[0]
+        y1 = X1[1]
+        x1 = X1[0]
+        x0 = X[0]
+        y0 = X[1]
+        dist = np.fabs((y2-y1)*x0-(x2-x1)*y0+x2*y1-y2*x1)/np.linalg.norm(X2-X1)
+        
+        XX = X - dist*self.normv
+        dist1 = np.linalg.norm(XX-X1)
+        dist2 = np.linalg.norm(XX-X2)
+        lenx = np.linalg.norm(X2-X1)
+        if np.fabs(dist1+dist2-lenx)>1.0e-12:
+            return max(dist1,dist2)
+        
+        if dist < 1.0e-13:
+            raise InsideElement
+        
+        return dist
         
     def getSingIntData(self, element):
         if self.ide == element.ide:
@@ -194,6 +225,9 @@ class StandardBoundary(FE.StandardElement):
             return self.intExtSingData.wg[self.ig,self.igx]*detJ
         else:
             raise Exception('Unknown Integration type')
+     
+    def getGradUX(self, gradux, data, dNx):
+        self.getGradU(gradux,data,dNx)
         
     def getAllValuesX(self, data, current = False, mechDofs = None):
         """
@@ -218,7 +252,7 @@ class StandardBoundary(FE.StandardElement):
         
         # calculate gradient of displacement
         self.gradux_.fill(0.0)
-        self.getGradU(self.gradux_,data,self.dNx_)
+        self.getGradUX(self.gradux_,data,self.dNx_)
         
         # calculate velocity
         if data.getTimeOrder() > 0:
@@ -240,9 +274,14 @@ class StandardBoundary(FE.StandardElement):
         # Get matrices from data
         timeOrder = data.getTimeOrder()
         #vGlob,vGlobD = data.getRi(),data.getRid()
-        kGlob,kGlobD = data.getKtL(),data.getKtLd()
-        dGlob,dGlobD = data.getDL(),data.getDLd()
-        mGlob,mGlobD = data.getML(),data.getMLd()
+        if linear:
+            kGlob,kGlobD = data.getKtL(),data.getKtLd()
+            dGlob,dGlobD = data.getDL(),data.getDLd()
+            mGlob,mGlobD = data.getML(),data.getMLd()
+        else:
+            kGlob,kGlobD = data.getKt(),data.getKtd()
+            dGlob,dGlobD = data.getD(),data.getDd()
+            mGlob,mGlobD = data.getM(),data.getMd()
         
         #Gauss integration points
         GaussPoints = element.getSingIntData(self)
@@ -263,9 +302,21 @@ class StandardBoundary(FE.StandardElement):
             
             # Calculate coordinate at current Gaussian point
             element.getAllValuesX(data,element.current)
+            try:
+                element.subCalculateFES()
+            except AttributeError:
+                pass
             
             try:
-                self.calculateGreen(self.x_,element.xx_)
+                if self.deformed and not self.current:
+                    x_ = self.x_ + self.u_[0:2]
+                else:
+                    x_ = self.x_
+                if element.deformed and not element.current:
+                    xx_ = element.xx_ + element.u_[0:2]
+                else:
+                    xx_ = element.xx_
+                self.calculateGreen(x_,xx_)
                 #self.G = 1.0
                 #self.gradG[0] = 0.0
                 #self.gradG[1] = 0.0
@@ -382,6 +433,11 @@ class StandardBoundary(FE.StandardElement):
             # Calculate coordinate at current Gaussian point
             self.getAllValues(data,self.current)
             
+            try:
+                self.calculateFES()
+            except AttributeError:
+                pass
+            
             # Initialize matrices
             #self.initializeMatrices()
             
@@ -440,20 +496,20 @@ class StandardBoundary(FE.StandardElement):
                 
                 # loop over node j
                 try:
-                    self.calculateK(K[i][j],i,0,t)
+                    self.calculateK(K[i][0],i,0,t)
                     for j in range(1,self.Nnod):
                         # calculate and assemble matrices
                         self.calculateK(K[i][j],i,j,t)
                 except AttributeError:
                     pass
                 try:
-                    self.calculateD(D[i][j],i,0,t)
+                    self.calculateD(D[i][0],i,0,t)
                     for j in range(1,self.Nnod):
                         self.calculateD(D[i][j],i,j,t)
                 except (AttributeError, TypeError):
                     pass
                 try:
-                    self.calculateM(M[i][j],i,0,t)                      
+                    self.calculateM(M[i][0],i,0,t)                      
                     for j in range(1,self.Nnod):
                         self.calculateM(M[i][j],i,j,t)
                 except (AttributeError, TypeError):
@@ -495,10 +551,12 @@ class StandardBoundary(FE.StandardElement):
             self.getGradUP(self.gradu_,dN_)
             self.u_.fill(0.0)
             self.getU(self.u_,N_)
-            self.v_.fill(0.0)
-            self.getV(self.v_,N_)
-            self.a_.fill(0.0)
-            self.getA(self.a_,N_)
+            if self.timeOrder > 0:
+                self.v_.fill(0.0)
+                self.getV(self.v_,N_)
+            if self.timeOrder == 2:
+                self.a_.fill(0.0)
+                self.getA(self.a_,N_)
             
             try:
                 self.calculateGreen(x_p,self.x_)
@@ -506,7 +564,6 @@ class StandardBoundary(FE.StandardElement):
                 continue
             
             self.postCalculateF(N_,dN_,factor,res)
-        res *= 2.0
             
         return res
         
@@ -545,7 +602,7 @@ class StandardStaticBoundary(StandardBoundary):
         
 class StandardMovingBoundary(StandardBoundary):
     """
-    Standard static boundary is a boundary element that is not moving during
+    Standard static boundary is a boundary element that is moving during
     simulation.
     """
     def __init__(self, Nodes, pd, basisFunction, nodeOrder, intData,\
@@ -612,10 +669,53 @@ class StraightBoundary1D(StandardBoundary):
             raise FE.OutsideElement
         return dist1/toldist*2.0 - 1.0
         
+class NeumannBoundary(FE.StandardElement):
+    """
+    Neumann Boundary condition
+    Apply boundary condition as a boundary element
+    """
+    def __init__(self, Nodes, pd, basisFunction, nodeOrder, intData, \
+                 normv, ide, dtype = 'float64', commonData = None, ndime = 1):
+        """
+        Initialize Neumann boundary
+        """
+        FE.StandardElement.__init__(self,Nodes,pd,basisFunction,nodeOrder,\
+                                    None,intData,dtype,commonData,ndime)
+        self.ide = ide
+        self.nodeOrder = nodeOrder
+        self.detJ = 1.0
+        self.normv = normv
+        self.current = False
+        
+    def getIdentifyNumber(self):
+        return self.ide
+        
+    def setNormalVector(self, normv):
+        self.normv = normv
+        
+    def getNormalVector(self):
+        return self.normv
+        
+    def __eq__(self,other):
+        try:
+            return self.ide == other.getIdentifyNumber()
+        except AttributeError:
+            return False
+
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None,\
+             deformed = False, deformed_factor = 1.0 ):
+        return FE.StandardElement.plot(self,fig,'r',fill_mat,number,deformed,\
+                                       deformed_factor)
 
 class SingularPoint(Exception):
     """
     Exception for singular point integration
+    """
+    pass
+
+class InsideElement(Exception):
+    """
+    Exception for point inside element
     """
     pass
     

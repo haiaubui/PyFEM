@@ -30,9 +30,11 @@ class PolarQuadElement(PE.PolarElement,QuadElement):
     """
     Quadrilateral Element in Polar Coordinates
     """
-    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None, \
+             deformed = False, deformed_factor=1.0):
         if fig is None:
             fig = pl.figure()
+        # deformed structure not implemented
         
         X1 = self.Nodes[0].getX(self.loop[0])
         X2 = self.Nodes[2].getX(self.loop[2])
@@ -104,24 +106,42 @@ class Quad9Element(QuadElement):
     """
     Quad9 element: quadrilateral element with 9 nodes
     """
-    def plot(self, fig = None, col = '-b', fill_mat = False, number = None):
+    def plot(self, fig = None, col = '-b', fill_mat = False, number = None, \
+             deformed = False, deformed_factor = 1.0):
         if fig is None:
             fig = pl.figure()
         
-        X1 = self.Nodes[0].getX()
-        X2 = self.Nodes[2].getX()
+        dfact = deformed_factor
+        if deformed:
+            X1 = self.Nodes[0].getX() + dfact*self.Nodes[0].getU()[0:2]
+            X2 = self.Nodes[2].getX() + dfact*self.Nodes[2].getU()[0:2]
+        else:
+            X1 = self.Nodes[0].getX()
+            X2 = self.Nodes[2].getX()
         pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
         
-        X1 = self.Nodes[2].getX()
-        X2 = self.Nodes[8].getX()
+        if not deformed:
+            X1 = self.Nodes[2].getX()
+            X2 = self.Nodes[8].getX()
+        else:
+            X1 = self.Nodes[2].getX() + dfact*self.Nodes[2].getU()[0:2]
+            X2 = self.Nodes[8].getX() + dfact*self.Nodes[8].getU()[0:2]
         pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
         
-        X1 = self.Nodes[8].getX()
-        X2 = self.Nodes[6].getX()
+        if not deformed:
+            X1 = self.Nodes[8].getX()
+            X2 = self.Nodes[6].getX()
+        else:
+            X1 = self.Nodes[8].getX() + dfact*self.Nodes[8].getU()[0:2]
+            X2 = self.Nodes[6].getX() + dfact*self.Nodes[6].getU()[0:2]
         pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
         
-        X1 = self.Nodes[6].getX()
-        X2 = self.Nodes[0].getX()
+        if not deformed:
+            X1 = self.Nodes[6].getX()
+            X2 = self.Nodes[0].getX()
+        else:
+            X1 = self.Nodes[6].getX() + dfact*self.Nodes[6].getU()[0:2]
+            X2 = self.Nodes[0].getX() + dfact*self.Nodes[0].getU()[0:2]
         pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
         
         nodes = self.Nodes

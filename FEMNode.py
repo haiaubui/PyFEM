@@ -51,6 +51,10 @@ class Node(GeneralNode):
                 self.a_ = ia.zeros(Ndof)
                 
         self.NonHomogeneousDirichlet = False
+        self.friendNode = None
+        self.friendDOF = -1
+        self.controlledDOF = -1
+        self.IDC = -1
         
     def copyToPosition(self, X):
         """
@@ -165,15 +169,35 @@ class Node(GeneralNode):
         """
         self.a_ = ia.array(a,self.dtype)
         
-    def connect(self, U, V, A):
+    def friendOF(self, n, idof = 0):
+        if n is self:
+            return
+        if (n is not None) and (n.friendNode is None):
+            self.friendNode = n
+            self.friendDOF = idof
+            self.freedom[idof] = False
+            self.u_[idof] = 0.0
+            
+    def controlVar(self, idof):
+        if idof < 0:
+            return
+        self.controlledDOF = idof
+        
+    def connect(self, *arg):
         """
         Connect global vector U,V,A to local u_,v_,a_
         """
+        U = arg[0]
+        V = arg[1]
+        A = arg[2]
+        Ud = arg[3]
+        
         for i in range(self.Ndof):
             idx = self.ID[i]
             if idx >= 0:
                 self.u_.connect(i, U, idx)
-                
+            elif idx < -1:
+                self.u_.connect(i, Ud, -idx - 2)            
         try:
             for i in range(self.Ndof):
                 idx = self.ID[i]
@@ -352,7 +376,7 @@ class Node(GeneralNode):
         for i in range(self.Ndof):
             idx = self.ID[i]
             if idx < -1:
-                vGlobalD[-idx-1] = self.u_[i]
+                vGlobalD[-idx-2] = self.u_[i]
                 
     def assembleU(self, uGlobal):
         """
@@ -474,8 +498,11 @@ class Node(GeneralNode):
                 self.ID[dof] = cnt
                 cnt += 1
             elif math.fabs(self.u_[dof]) > 1.0e-14:
-                self.ID[dof] = cntd
                 cntd -= 1
+                self.ID[dof] = cntd
+                if self.controlledDOF >= 0:
+                    self.IDC = cntd
+                
         return cnt, cntd
 
 # End of Node class definition    

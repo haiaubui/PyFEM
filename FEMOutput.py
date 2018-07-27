@@ -225,7 +225,11 @@ class StandardFileOutput(FileOutput):
             self.file.write(' TIME '+str(data.getTime())+' ORDER '+\
             str(data.getTimeOrder())+'\n')
         else:
-            self.file.write(' TIME 0.0 ORDER 0\n')
+            try:
+                self.file.write(' LOAD '+str(data.getLambda())+' ORDER '+\
+                                str(data.getTimeOrder())+'\n')
+            except AttributeError:
+                self.file.write(' TIME 0.0 ORDER 0\n')
     
     def outputData(self, data):
         """
@@ -266,7 +270,7 @@ class StandardFileOutput(FileOutput):
             Nnod = int(hdr[1])
         except:
             raise ex            
-        if hdr[2] != 'TIME':
+        if hdr[2] != 'TIME' and hdr[2] != 'LOAD':
             raise ex
         try:
             t = float(hdr[3])
@@ -309,6 +313,9 @@ class StandardFileOutput(FileOutput):
                     res.append(u)
                 elif val == 'v':
                     v = list(float(x) for x in line[4+Ndof:4+Ndof*2])
+                    if len(v) == 0:
+                        file.close()
+                        raise Exception
                     res.append(v)
                 elif val == 'a':
                     a = list(float(x) for x in line[4+Ndof*2:4+Ndof*3])
