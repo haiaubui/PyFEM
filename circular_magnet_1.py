@@ -488,13 +488,13 @@ class AxiSymMagneticBoundaryLinear(AE.AxisymmetricStaticBoundary,FB.StraightBoun
     def postCalculateF(self, N_, dN_, factor, res):
         idofA = 0
         idofJ = 1
-#        r = self.x_[0]
+        r = self.x_[0]
         k1 = self.u_[idofA]*\
         (self.normv[0]*self.gradG[0]+self.normv[1]*self.gradG[1])
-        k1 *= factor
+        k1 *= factor*r
 #        k1 += self.u_[idofA]*self.G*self.normv[0]*factor/r
         k2 = self.u_[idofJ]*self.G
-        k2 *= factor
+        k2 *= factor*r
         res += k1 - k2        
         
     def subCalculateKLinear(self, K, element, i, j):
@@ -503,45 +503,53 @@ class AxiSymMagneticBoundaryLinear(AE.AxisymmetricStaticBoundary,FB.StraightBoun
         #    return
         idofA = 0
         idofJ = 1
-        wfac = self.getFactor()
+        r0 = self.x_[0]
+        r = element.xx_[0]
+        wfac = self.getFactor()*r0
         wfact = element.getFactorX(element.detJ)
-        wfacx = element.getFactorXR(element.detJ)   
+        wfacx = element.getFactorXR(element.detJ) 
         K[idofA,idofA]=-self.N_[i]*element.Nx_[j]
         K[idofA,idofA]*=\
         np.einsum('i,ij,j',self.normv,self.gr0grG,element.normv)
-        K[idofA,idofA]*= wfac*wfacx
-        K[idofA,idofA] = 0.0
+        K[idofA,idofA]*= wfac*wfacx*r
+#        K[idofA,idofA] = 0.0
         
         K[idofA,idofJ]=self.N_[i]*element.Nx_[j]
         K[idofA,idofJ]*=np.dot(self.normv,self.gradG0)
-        K[idofA,idofJ]*= wfac*wfacx
+        K[idofA,idofJ]*= wfac*wfacx*r
 #        K[idofA,idofJ] = 0.0
         
         K[idofJ,idofA]=self.N_[i]*element.Nx_[j]
         K[idofJ,idofA]*=np.dot(element.normv,self.gradG)
-        K[idofJ,idofA]*= wfac*wfacx
-#        K[idofJ,idofA]=K[idofA,idofJ]
+        
+#        K[idofJ,idofA] -= self.N_[i]*element.Nx_[j]*self.G*element.normv[0]/r
+        K[idofJ,idofA]*= wfac*wfacx*r
+#        K[idofA,idofJ]=K[idofJ,idofA]
+#        K[idofJ,idofA]=0.0
         
         K[idofJ,idofJ]=-self.N_[i]*element.Nx_[j]*self.G
-        K[idofJ,idofJ]*= wfac*wfact
+        K[idofJ,idofJ]*= wfac*wfact*r
 #        K[idofJ,idofJ] = 0.0
         
-        K /= self.material.mu00
+        K /= self.material.mu0
+        K *= 2.0*np.pi
     
     def calculateKLinear(self, K, i, j, t):
 #        K[2,3] = self.N_[i]*self.N_[j]
 #        K[2,3] *= self.getFactor()*2.0*np.pi*self.x_[0]/self.material.mu00
 #        K[3,2] = -self.N_[i]*self.N_[j]*0.5
 #        K[3,2] *= self.getFactor()/self.material.mu00
-        K[0,1] = -self.N_[i]*self.N_[j]
-        K[0,1] *= self.getFactor()*np.pi
-#        K[0,1] = 0.0
-        K[1,0] = K[0,1]
+        K[0,1] = -0.5*self.N_[i]*self.N_[j]
+        K[0,1] *= self.getFactor()*2.0*np.pi*self.x_[0]/self.material.mu00
+#        K[0,1] = 0.0 
+        K[1,0] = -0.5*self.N_[i]*self.N_[j]
+        K[1,0] *= self.getFactor()*2.0*np.pi*self.x_[0]/self.material.mu00
         K[0,0] = -self.N_[i]*self.N_[j]*self.normv[0]
-        K[0,0] *= self.getFactor()*2.0*np.pi
+        K[0,0] *= self.getFactor()*2.0*np.pi/self.material.mu00
+        K[1,1] = 0.0
 #        K[0,0] = 0.0
         
-        K /= self.material.mu00
+#        K /= self.material.mu00
 
 class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary,AxiMechElement,\
                              FB.StraightBoundary1D):
@@ -641,6 +649,19 @@ class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary,AxiMechElement,\
                     self.dNsx_[ig][0,i]
                 except IndexError:
                     print('error here')
+                    
+                    
+    def postCalculateF(self, N_, dN_, factor, res):
+        idofA = 2
+        idofJ = 3
+        r = self.x_[0]
+        k1 = self.u_[idofA]*\
+        (self.normv[0]*self.gradG[0]+self.normv[1]*self.gradG[1])
+        k1 *= factor*r
+        k1 += self.u_[idofA]*self.G*self.normv[0]*factor/r
+        k2 = self.u_[idofJ]*self.G
+        k2 *= factor*r
+        res += (k1 + k2)
                     
     def subCalculateFES(self):
         """
@@ -759,15 +780,18 @@ class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary,AxiMechElement,\
         pass
         
     def calculateK(self, K, inod, jnod, t):
+        r = self.x_[0]
         k30 = 0.5*self.N_[inod]*self.derivativeFm11(jnod)
-        k30 *= self.getFactor()
-        K[3,0] += k30[0]
-        K[3,1] += k30[1]
+        k30 *= self.getFactor()*r*2.0*np.pi
+        K[3,0] -= k30[0]
+        K[3,1] -= k30[1]
         k32 = 0.5*self.N_[inod]*self.N_[jnod]*self.Fmg[1,1]*self.getFactor()
-        K[3,2] += k32
+        k32 *= r*2.0*np.pi
+        K[3,2] -= k32
         
     def calculateR(self, R, inod, t):
-        R[3] += 0.5*self.N_[inod]*self.u_[2]*self.Fmg[1,1]*self.getFactor()
+        factor = self.getFactor()*2.0*np.pi*self.x_[0]
+        R[3] -= 0.5*self.N_[inod]*self.u_[2]*self.Fmg[1,1]*factor
         
 #    def subCalculateKLinear(self, K, element, i, j):
 #        #if np.allclose(element.xx_[0],0.0,rtol = 1.0e-14):
@@ -786,108 +810,83 @@ class AxiSymMagneticBoundary(AE.AxisymmetricStaticBoundary,AxiMechElement,\
         
     def subCalculateK(self, K, element, inod, jnod):
         K.fill(0.0)
-        wfac = self.getFactor()
-        wfact = element.getFactorX(element.detJ)
-        wfacx = element.getFactorXR(element.detJ)
-        gradGN = np.dot(element.normv,self.gradG)
-        gradGT = np.dot(element.tangent,self.gradG)
-        dgradGN = np.dot(element.normv,self.grgrG)
-        dgradGT = np.dot(element.tangent,self.grgrG)
-        Ctt = np.dot(np.dot(element.tangent,element.Cgx),element.tangent)
-        Ctn = np.dot(np.dot(element.tangent,element.Cgx),element.normv)
-        Fnt = np.dot(np.dot(element.normv,element.Fgx),element.tangent)
-        Ftt = np.dot(np.dot(element.tangent,element.Fgx),element.tangent)
-#        if np.fabs(element.normv[0])<1.0e-13:
-#            Ctt = element.sCgx[0,0]
-#            Ctn = element.sCgx[0,1]
-#            Fnt = element.sFgx[1,0]
-#            Ftt = element.sFgx[0,0]
-#        else:
-#            Ctt = element.sCgx[1,1]
-#            Ctn = element.sCgx[1,0]
-#            Fnt = element.sFgx[0,1]
-#            Ftt = element.sFgx[1,1]
-        Fxx = element.sFg[1,1]
+        r0 = self.x_[0]
+        r = element.xx_[0]
+        wfac = self.getFactor()*r0*2.0*np.pi
+        wfact = element.getFactorX(element.detJ)*r
+        wfacx = element.getFactorXR(element.detJ)*r
         
-        dFnt = element.dNx_[:,jnod]*element.tangent
-        dFtt = element.dNx_[:,jnod]*element.tangent
+        Frr = element.sFg[0,0]
+        Frz = element.sFg[0,2]
+        Fzr = element.sFg[2,0]
+        Fzz = element.sFg[2,2]
+        Fpp = element.sFg[1,1]
         
-        k3x = dFnt*gradGT - dFtt*gradGN
-        k3x += Fnt*dgradGT - Ftt*dgradGN
-        k3x *= element.ux_[2]
-        k3x *= wfacx*wfac*self.N_[inod]
+        dFrr_ur = element.dNx_[0,jnod]
+        dFrz_ur = element.dNx_[1,jnod]
+        dFzr_uz = element.dNx_[0,jnod]
+        dFzz_uz = element.dNx_[1,jnod]
+        dFpp_ur = element.Nx_[jnod]/r
         
-#        k3x = dgradGN*(Ctt-Ctn*Fnt)*Fxx
-#        k3x += gradGN*element.derivativeC1(jnod,element.dNx_)*Fxx
-#        k3x -= dgradGT*Ctn*Ftt*Fxx
-#        k3x -= gradGT*element.derivativeC2(jnod,element.dNx_)*Fxx
-#        k3x += (gradGN*(Ctt-Ctn*Fnt)-gradGT*Ctn*Ftt)*element.Nx_[jnod]/element.xx_[0]
-#        k3x *= element.ux_[2]/element.sJF
-#        en = element.ux_[2]*(gradGN*(Ctt-Ctn*Fnt)-gradGT*Ctn*Ftt)*Fxx
-#        k3x += en*element.derivativeJinvX(jnod)
-#        k3x *= wfacx*wfac*self.N_[inod]
-#        if element.normv[1] < -1.0e-14:
-#            k3x *= -1.0
-        K[3,0] = -k3x[0]
-        K[3,1] = -k3x[1]
+        k3x0 = -self.gradG[1]*element.normv[0]*dFrz_ur
+        k3x0 += self.gradG[1]*element.normv[1]*dFrr_ur
+        k3x1 = -self.gradG[0]*element.normv[1]*dFzr_uz
+        k3x1 += self.gradG[0]*element.normv[0]*dFzz_uz
         
-        k32 = element.Nx_[jnod]*(Fnt*gradGT-Ftt*gradGN)
-        k32 *= wfacx*wfac*self.N_[inod]
+        k3x1 -= (element.normv[1]*dFzr_uz-element.normv[0]*dFzz_uz)/r*self.G
         
-#        k32 = element.Nx_[jnod]*(gradGN*(Ctt-Ctn*Fnt)-gradGT*Ctn*Ftt)*Fxx
-#        k32 *= wfacx*wfac*self.N_[inod]/element.sJF
-#        if element.normv[1] < -1.0e-14:
-#            k32 *= -1.0
-        K[3,2] = -k32
+        k3x0 *= wfacx*wfac*self.N_[inod]*element.ux_[2]
+        k3x1 *= wfacx*wfac*self.N_[inod]*element.ux_[2]
         
-        k3y = element.ux_[3]*Fxx*self.gradG
-        k3y[0] += element.ux_[3]*element.Nx_[jnod]/element.xx_[0]*self.G
+        K[3,0] = k3x0
+        K[3,1] = k3x1
+        
+        k32 = -self.gradG[0]*element.normv[1]*Fzr
+        k32 -= self.gradG[1]*element.normv[0]*Frz
+        k32 += self.gradG[1]*element.normv[1]*Frr
+        k32 += self.gradG[0]*element.normv[0]*Fzz
+        
+        k32 *= wfacx*wfac*self.N_[inod]*element.Nx_[jnod]
+        
+        k32 -= (element.normv[1]*Fzr-element.normv[0]*Fzz)/r*self.G*\
+        self.N_[inod]*element.Nx_[jnod]*wfact*wfac
+        
+        K[3,2] = k32
+        
+        k3y = element.ux_[3]*dFpp_ur*self.G
         k3y *= self.N_[inod]*wfact*wfac
-        K[3,0] -= k3y[0]
-        K[3,1] -= k3y[1]
+        K[3,0] = k3y
         
-        k33 = element.Nx_[jnod]*Fxx*self.G
+        k33 = element.Nx_[jnod]*Fpp*self.G
         k33 *= self.N_[inod]*wfact*wfac
-        K[3,3] = -k33
+        K[3,3] = k33
         
     def subCalculateR(self, R, element, inod):
-        wfac = self.getFactor()
-        wfact = element.getFactorX(element.detJ)
-        wfacx = element.getFactorXR(element.detJ)
-        gradGN = np.dot(element.normv,self.gradG)
-        gradGT = np.dot(element.tangent,self.gradG)
-#        Ctt = np.dot(np.dot(element.tangent,element.Cgx),element.tangent)
-#        Ctn = np.dot(np.dot(element.tangent,element.Cgx),element.normv)
-        Fnt = np.dot(np.dot(element.normv,element.Fgx),element.tangent)
-        Ftt = np.dot(np.dot(element.tangent,element.Fgx),element.tangent)
-#        if np.fabs(element.normv[0])<1.0e-13:
-#            Ctt = element.sCgx[0,0]
-#            Ctn = element.sCgx[0,1]
-#            Fnt = element.sFgx[1,0]
-#            Ftt = element.sFgx[0,0]
-#        else:
-#            Ctt = element.sCgx[1,1]
-#            Ctn = element.sCgx[1,0]
-#            Fnt = element.sFgx[0,1]
-#            Ftt = element.sFgx[1,1]
-        Fxx = element.sFg[1,1]
+        r0 = self.x_[0]
+        r = element.xx_[0]
+        wfac = self.getFactor()*r0*2.0*np.pi
+        wfact = element.getFactorX(element.detJ)*r
+        wfacx = element.getFactorXR(element.detJ)*r
+        Frr = element.sFg[0,0]
+        Frz = element.sFg[0,2]
+        Fzr = element.sFg[2,0]
+        Fzz = element.sFg[2,2]
+        Fpp = element.sFg[1,1]
         
-        ri = Fnt*gradGT-Ftt*gradGN
+        ri = self.gradG[0]*element.normv[1]*Fzr
+        ri += self.gradG[1]*element.normv[0]*Frz
+        ri *= -1.0
+        ri += element.normv[1]*self.gradG[1]*Frr
+        ri += element.normv[0]*self.gradG[0]*Fzz
+        ri -= self.G/r*(element.normv[1]*Fzr-element.normv[0]*Fzz)
         ri *= element.ux_[2]
         ri *= wfacx
         
-#        ri = gradGN*(Ctt-Ctn*Fnt)-gradGT*Ctn*Ftt
-#        ri *= element.ux_[2]/element.sJF*Fxx
-#        ri *= wfacx
-#        if element.normv[1] > -1.0e-14:
-#            ri *= -1.0
-#        ri *= -1.0
-        
-        ri += element.ux_[3]*Fxx*self.G*wfact
+        ri += element.ux_[3]*Fpp*self.G*wfact
         
         ri *= self.N_[inod]*wfac
         
-        R[3] -= ri
+        R[3] += ri
         
     def plot(self, fig = None, col = '-b', fill_mat = False, number = None,\
              deformed = False, deformed_factor=1.0 ):
@@ -1000,16 +999,16 @@ class AxiSymMagnetic(AE.AxisymmetricQuadElement, QE.Quad9Element):
         return fig, [nodes[0],nodes[2],nodes[8],nodes[6]]
 
 
-Ndof = 2             
+Ndof = 4             
 tOrder = 0
 Ng = [3,3]
 numberSteps = 2
 tol = 1.0e-8
 
 intDat = idat.GaussianQuadrature(Ng, 2, idat.Gaussian1D)
-intDatB = idat.GaussianQuadrature(3, 1, idat.Gaussian1D)
-intSingDat = SI.SingularGaussian1D(12, intDatB.xg,\
-SI.Gaussian_1D_Pn_Log, SI.Gaussian_1D_Pn_Log_Rat)
+intDatB = idat.GaussianQuadrature(6, 1, idat.Gaussian1D)
+intSingDat = SI.SingularGaussian1D(24, intDatB.xg,\
+SI.Gaussian_1D_Pn_Log_Rat, SI.Gaussian_1D_Pn_Log_Rat_Rat2)
 #intSingDat = idat.GaussianQuadrature(12, 1, idat.Gaussian1D)
 
 condt = np.array([np.cos(np.pi/2.0+1.0e-2*np.pi),\
@@ -1040,9 +1039,9 @@ def create_mesh():
         geo.addPolygons(e.extendToQuad(d,s))
         
     nodes1 = []
-    nodes1.append(FN.Node([0,H*11],Ndof,timeOrder = tOrder))
-    nodes1.append(FN.Node([R*2,H*11],Ndof,timeOrder = tOrder))
-    nodes1.append(FN.Node([R*2+0.1*R,H*11],Ndof,timeOrder = tOrder))
+    nodes1.append(FN.Node([0,H*21],Ndof,timeOrder = tOrder))
+    nodes1.append(FN.Node([R*2,H*21],Ndof,timeOrder = tOrder))
+    nodes1.append(FN.Node([R*2+0.1*R,H*21],Ndof,timeOrder = tOrder))
     
     edges1 = [mg.Edge(nodes1[i],nodes1[i+1]) for i in range(len(nodes1)-1)]
     
@@ -1062,17 +1061,17 @@ def create_mesh():
         
     polys = geo.getPolygons()
     
-    polys[0].setDivisionEdge13(8)
+    polys[0].setDivisionEdge13(4)
     polys[0].setDivisionEdge24(1)
-    polys[2].setDivisionEdge13(8)
+    polys[2].setDivisionEdge13(4)
     polys[2].setDivisionEdge24(1)
     
 #    polys[4].setDivisionEdge13(8)
 #    polys[4].setDivisionEdge24(1)
     
-    mat1 = LinearMechanicMaterial(2.1e11, 0.3, 7.8e3,10000.0,0)
+    mat1 = LinearMechanicMaterial(2.1e11, 0.3, 7.8e3,100.0,0)
     mat2 = LinearMechanicMaterial(0.0, 0.0, 1.0,1.0,1)
-    mat3 = LinearMechanicMaterial(0.0, 0.0, 1.0,10000.0,2)
+    mat3 = LinearMechanicMaterial(0.0, 0.0, 1.0,100.0,2)
     mat4 = LinearMechanicMaterial(0.0, 0.0, 1.0,1.0,3)
     
     polys[0].setMaterial(mat3)
@@ -1101,17 +1100,17 @@ def create_mesh():
             n.setConstraint(False, 0.0, 1)
 #            n.setConstraint(False, condt[1]*0.5*n.getX()[0],2)
             
-        if n.getX()[1]<-H*10-1.0e-14 and n.getX()[1]>-H*20+1.0e-14 and\
-        n.getX()[0]<2.1*R-1.0e-14:
-            n.setConstraint(False, 0.0,3)
-            
-        if n.getX()[1]<H*21-1.0e-14 and n.getX()[1]>H*11+1.0e-14 and\
-        n.getX()[0]<2.1*R-1.0e-14:
-            n.setConstraint(False, 0.0,3)
-            
-        if n.getX()[1]<H-1.0e-14 and n.getX()[1]>1.0e-14 and\
-        n.getX()[0]<R-1.0e-14:
-            n.setConstraint(False, 0.0,3)
+#        if n.getX()[1]<-H*10-1.0e-14 and n.getX()[1]>-H*20+1.0e-14 and\
+#        n.getX()[0]<2.1*R-1.0e-14:
+#            n.setConstraint(False, 0.0,3)
+#            
+#        if n.getX()[1]<H*21-1.0e-14 and n.getX()[1]>H*11+1.0e-14 and\
+#        n.getX()[0]<2.1*R-1.0e-14:
+#            n.setConstraint(False, 0.0,3)
+#            
+#        if n.getX()[1]<H-1.0e-14 and n.getX()[1]>1.0e-14 and\
+#        n.getX()[0]<R-1.0e-14:
+#            n.setConstraint(False, 0.0,3)
             
         if n.getX()[1] > H*1.5 or n.getX()[1] < -0.5*H:
             n.setConstraint(False, 0.0, 0)
@@ -1158,16 +1157,16 @@ def create_mesh():
     mtx = syp.sqrt(mt)*syp.pi
     kint = syp.elliptic_k(m)
     eint = syp.elliptic_e(m)
-#    Gf = rx*((2.0-m)*kint-2.0*eint)/(m*mtx)
+#    Gf = r0*((2.0-m)*kint-2.0*eint)/(m*mtx)
     Gf = ((2.0-m)*kint-2.0*eint)/(m*mtx)
     Gfr = syp.diff(Gf,rx)
     Gfz = syp.diff(Gf,xx)
     Gfr0 = syp.diff(Gf,r0)
     Gfz0 = syp.diff(Gf,x0)
-    Gfr0r = syp.diff(Gfr0,rx)
-    Gfr0z = syp.diff(Gfr0,xx)
-    Gfz0r = syp.diff(Gfz0,rx)
-    Gfz0z = syp.diff(Gfz0,xx)
+    Gfr0r = syp.diff(Gfr,r0)
+    Gfr0z = syp.diff(Gfr,x0)
+    Gfz0r = syp.diff(Gfz,r0)
+    Gfz0z = syp.diff(Gfz,x0)
     Gfrr = syp.diff(Gfr,rx)
     Gfrz = syp.diff(Gfr,xx)
     Gfzr = syp.diff(Gfz,rx)
@@ -1203,7 +1202,7 @@ def create_mesh():
     for i,e in enumerate(elems1):
         if np.fabs(e[1].getX()[0]) < 1.0e-13:
             continue
-        elementBs.append(AxiSymMagneticBoundaryLinear(e,2,QE.LagrangeBasis1D,\
+        elementBs.append(AxiSymMagneticBoundary(e,2,QE.LagrangeBasis1D,\
         QE.generateQuadNodeOrder(2,1),intDatB,intSingDat,normBndVec[i],i))
         elementBs[-1].setMaterial(mat2)
         
@@ -1229,10 +1228,56 @@ def create_mesh():
         elementBs[-1].Gdr0z = gradGr0z
         elementBs[-1].Gdz0r = gradGz0r
         elementBs[-1].Gdz0z = gradGz0z
-#        elementBs[-1].linear=False
+        elementBs[-1].linear=False
     
 
-    mesh.addBoundaryElements(elementBs)    
+    mesh.addBoundaryElements(elementBs)   
+    
+    for n in mesh.getNodes():
+        ine = False
+        for e in elementBs:
+            if n in e:
+                ine = True
+        if not ine:
+            n.setConstraint(False, 0.0, 3)
+    
+#    ndup = []
+#    for n in mesh.getNodes():
+#        xn = n.getX()
+#        n1 = np.fabs(xn[0]-0.2)<1.0e-14 and np.fabs(xn[1]+0.02)<1.0e-14
+#        n2 = np.fabs(xn[0]-0.2)<1.0e-14 and np.fabs(xn[1]+0.01)<1.0e-14
+#        n3 = np.fabs(xn[0]-0.2)<1.0e-14 and np.fabs(xn[1]-0.011)<1.0e-13
+#        n4 = np.fabs(xn[0]-0.2)<1.0e-14 and np.fabs(xn[1]-0.021)<1.0e-13
+#        if n1 or n2 or n3 or n4:
+#            be1 = None
+#            be2 = None
+#            for be in mesh.BoundaryElements:
+#                if n in be:
+#                    if be1 is None:
+#                        be1 = be
+#                    elif be2 is None:
+#                        be2 = be
+#                        break
+#            nx1 = n.copy()
+#            nx1.setConstraint(False,0.0,0)
+#            nx1.setConstraint(False,0.0,1)
+#            nx1.friendOF(n,2)
+#            nx2 = n.copy()
+#            nx2.setConstraint(False,0.0,0)
+#            nx2.setConstraint(False,0.0,1)
+#            nx2.friendOF(n,2)
+#            n.freedom[3] = False
+#            for i1, nt1 in enumerate(be1.Nodes):
+#                if n == nt1:
+#                    be1.Nodes[i1] = nx1
+#                    ndup.append(nx1)
+#            for i2, nt2 in enumerate(be2.Nodes):
+#                if n == nt2:
+#                    be2.Nodes[i2] = nx2
+#                    ndup.append(nx2)
+#    for n in ndup:
+#        mesh.Nodes.append(n)
+#        mesh.Nnod += 1
         
     return mesh
 
@@ -1301,16 +1346,16 @@ def create_simple_mesh():
     mtx = syp.sqrt(mt)*syp.pi
     kint = syp.elliptic_k(m)
     eint = syp.elliptic_e(m)
-#    Gf = rx*((2.0-m)*kint-2.0*eint)/(m*mtx)
+#    Gf = r0*((2.0-m)*kint-2.0*eint)/(m*mtx)
     Gf = ((2.0-m)*kint-2.0*eint)/(m*mtx)
     Gfr = syp.diff(Gf,rx)
     Gfz = syp.diff(Gf,xx)
     Gfr0 = syp.diff(Gf,r0)
     Gfz0 = syp.diff(Gf,x0)
-    Gfr0r = syp.diff(Gfr0,rx)
-    Gfr0z = syp.diff(Gfr0,xx)
-    Gfz0r = syp.diff(Gfz0,rx)
-    Gfz0z = syp.diff(Gfz0,xx)
+    Gfr0r = syp.diff(Gfr,r0)
+    Gfr0z = syp.diff(Gfr,x0)
+    Gfz0r = syp.diff(Gfz,r0)
+    Gfz0z = syp.diff(Gfz,x0)
     Gfrr = syp.diff(Gfr,rx)
     Gfrz = syp.diff(Gfr,xx)
     Gfzr = syp.diff(Gfz,rx)
@@ -1375,6 +1420,46 @@ def create_simple_mesh():
         
     #mesh.addElements(elementBs)
     mesh.addBoundaryElements(elementBs)
+    
+    ndup = []
+    for n in mesh.getNodes():
+        xn = n.getX()
+#        n1 = np.fabs(xn[0])<1.0e-14 and np.fabs(xn[1])<1.0e-14
+        n2 = np.fabs(xn[0]-1.0)<1.0e-14 and np.fabs(xn[1])<1.0e-14
+        n3 = np.fabs(xn[0]-1.0)<1.0e-14 and np.fabs(xn[1]-1.0)<1.0e-14
+#        n4 = np.fabs(xn[0])<1.0e-14 and np.fabs(xn[1]-1.0)<1.0e-14
+        n5 = np.fabs(xn[0]-2.0)<1.0e-14 and np.fabs(xn[1]-0.25)<1.0e-14
+        n6 = np.fabs(xn[0]-2.5)<1.0e-14 and np.fabs(xn[1]-0.25)<1.0e-14
+        n7 = np.fabs(xn[0]-2.5)<1.0e-14 and np.fabs(xn[1]-0.75)<1.0e-14
+        n8 = np.fabs(xn[0]-2.0)<1.0e-14 and np.fabs(xn[1]-0.75)<1.0e-14
+        if n2 or n3 or n5 or n6 or n7 or n8:
+            be1 = None
+            be2 = None
+            for be in mesh.BoundaryElements:
+                if n in be:
+                    if be1 is None:
+                        be1 = be
+                    elif be2 is None:
+                        be2 = be
+                        break
+            nx1 = n.copy()
+            nx1.friendOF(n,0)
+            nx2 = n.copy()
+            nx2.friendOF(n,0)
+            n.freedom[1] = False
+            for i1, nt1 in enumerate(be1.Nodes):
+                if n == nt1:
+                    be1.Nodes[i1] = nx1
+                    ndup.append(nx1)
+            for i2, nt2 in enumerate(be2.Nodes):
+                if n == nt2:
+                    be2.Nodes[i2] = nx2
+                    ndup.append(nx2)
+    for n in ndup:
+        mesh.Nodes.append(n)
+        mesh.Nnod += 1
+    
+    
     mesh.generateID()
 
     
@@ -1382,8 +1467,8 @@ def create_simple_mesh():
     
     return mesh
 
-#mesh = create_mesh()
-mesh = create_simple_mesh()
+mesh = create_mesh()
+#mesh = create_simple_mesh()
 
 mesh.generateID()
 
@@ -1392,7 +1477,7 @@ output = FO.StandardFileOutput('/home/haiau/Documents/result.dat')
 #alg = NR.LoadControlledNewtonRaphson(mesh,output,sv.numpySolver(),numberSteps)
 #alg = NR.LinearStabilityProblem(mesh,output,sv.numpySolver())
 alg = NR.ArcLengthControlledNewtonRaphson(mesh,output,sv.numpySolver(),numberSteps,\
-                                          arcl=100.0,max_iter=200)
+                                          arcl=10.0,max_iter=200)
 #alg.enableVariableConstraint()
 #alg.calculate(True)
 alg.calculate(False)

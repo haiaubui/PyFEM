@@ -67,6 +67,14 @@ class Node(GeneralNode):
         n = Node(X, self.Ndof, timeOrder = self.timeOrder)
             
         return n
+    
+    def copy(self):
+        n = Node(self.X_,self.Ndof,timeOrder = self.timeOrder)
+        for i in range(self.Ndof):
+            n.freedom[i] = self.freedom[i]
+        n.load = self.load
+        n.callPointLoad = self.callPointLoad
+        return n
         
     def __str__(self):
         """
@@ -169,9 +177,13 @@ class Node(GeneralNode):
         """
         self.a_ = ia.array(a,self.dtype)
         
+    def setX(self, x):
+        self.X_[0] = x[0]
+        self.X_[1] = x[1]
+        
     def friendOF(self, n, idof = 0):
-        if n is self:
-            return
+#        if n is self:
+#            return
         if (n is not None) and (n.friendNode is None):
             self.friendNode = n
             self.friendDOF = idof

@@ -145,8 +145,12 @@ class Quad9Element(QuadElement):
         pl.plot(np.array([X1[0],X2[0]]),np.array([X1[1],X2[1]]),col)
         
         nodes = self.Nodes
-        for n in nodes:
-            pl.plot(n.getX()[0],n.getX()[1],'.b')
+#        if not deformed:
+#            for n in nodes:
+#                pl.plot(n.getX()[0],n.getX()[1],'.b')
+#        else:
+#            for n in nodes:
+#                pl.plot(n.getX()[0]+dfact*n.getU()[0],n.getX()[1]+dfact*n.getU()[1],'.b')
         
         if number is not None:
             c = 0.5*(nodes[2].getX()+nodes[6].getX())
@@ -261,6 +265,58 @@ def LagrangeBasis1D(x_, pd, N_ = None, dN_ = None, Order = None):
         pass
     
     return N_, dN_
+
+def RampBasis1D3N(x_, pd, N_ = None, dN_ = None, Order = None):
+    """
+    Calculate Ramp Basis functions and its derivatives for 1D element with
+    3 nodes
+    Input:
+        x_ : parametric coordinates
+        pd : polynomial degree (no effect here, because pd always equals 1)
+        N_= None : create new array for N_
+        dN_ = None: create new array for dN_
+    Return: the updated arrays N_ and dN_
+    """
+    n = 2 + 1
+    if N_ is None:
+        N_ = np.empty(n)
+    if dN_ is None:
+        dN_ = np.empty(n)
+        
+    if x_ < 0.0 and x_ >= -1.0:
+        N_[0] = -x_
+        N_[1] = x_ + 1.0
+        N_[2] = 0.0
+        dN_[0] = -1.0
+        dN_[1] = 1.0
+        dN_[2] = 0.0
+    elif x_ == 0.0:
+        N_[0] = 0.0
+        N_[1] = 1.0
+        N_[2] = 0.0
+        dN_[0] = 0.0
+        dN_[1] = 0.0
+        dN_[2] = 0.0
+    elif x_ > 0 and x_ <= 1.0:
+        N_[0] = 0.0
+        N_[1] = -x_ + 1.0
+        N_[2] = x_
+        dN_[0] = 0.0
+        dN_[1] = -1.0
+        dN_[2] = 1.0
+        
+def PulseBasis1D(x_, pd, N_ = None, dN_ = None, Order = None):
+    n = pd + 1
+    if N_ is None:
+        N_ = np.empty(n)
+    if dN_ is None:
+        dN_ = np.empty(n)
+        
+    for i in range(n):
+        N_[i] = 1.0
+        dN_[i] = 0.0
+        
+        
         
 def generateQuadNodeOrder(pd, ndim, typeE = 'rcd'):
     """

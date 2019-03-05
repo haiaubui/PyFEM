@@ -108,7 +108,7 @@ class GaussianQuadrature(IntegrationData):
         
     def generatePoints(self, gen):
         if self.Ndim == 1:
-            self.xg, self.wg = gen(self.Ng)
+            self.xg, self.wg = gen(np.int(self.Ng))
         if self.Ndim == 2:
             xg1, wg1 = gen(self.Ng[0])
             xg2, wg2 = gen(self.Ng[1])
@@ -120,6 +120,22 @@ class GaussianQuadrature(IntegrationData):
             xg3, wg3 = gen(self.Ng[2])
             self.xg = np.array(list(it.product(xg1,xg2,xg3))).transpose()
             self.wg = np.array(list(it.product(wg1,wg2,xg3))).transpose()
+            
+class GaussianQuadratureFile(GaussianQuadrature):
+    def __init__(self, filename):
+        self.file = open(filename,'r')
+        header = self.file.readline()
+        header = header.split()
+        ng = int(header[1])
+        ndim = 1
+        GaussianQuadrature.__init__(self,ng,ndim,None)
+        self.xg = np.zeros(ng,'float64')
+        self.wg = np.zeros(ng,'float64')
+        for i in range(ng):
+            line = self.file.readline()
+            dat = line.split()
+            self.xg[i] = float(dat[0])
+            self.wg[i] = float(dat[1])
 
 class GaussianQuadratureOnEdge(GaussianQuadrature):
     def __init__(self, Ng, gen, edg):

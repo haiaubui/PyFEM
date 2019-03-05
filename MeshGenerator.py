@@ -17,7 +17,7 @@ class GeneralNode(object):
     """
     General node includes only coordinates of node
     """
-    def __init__(self, X, ndim, res=1.0e-14):
+    def __init__(self, X, ndim, res=1.0e-14,dtype = 'float64'):
         """
         Initialized generalized Node
         Input:
@@ -28,7 +28,7 @@ class GeneralNode(object):
         assert ndim > 0, 'Number of dimensions must be a positive number'
         self.Ndim = ndim
         assert len(X) >= ndim, 'There is not enough coordinate'
-        self.X_ = np.array(X[0:self.Ndim])
+        self.X_ = np.array(X[0:self.Ndim],dtype)
         assert res > 0.0, 'resolution must be a positive number'
         self.res = res
         

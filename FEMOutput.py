@@ -36,7 +36,7 @@ class FileOutput(FEMOutput):
     """
     Output to file
     """
-    def __init__(self, outfile):
+    def __init__(self, outfile, p = "w"):
         """
         Initialize FileOutput object and open file
         Input:
@@ -44,7 +44,7 @@ class FileOutput(FEMOutput):
         """
         self.outfile = outfile
         try:
-            self.file = open(self.outfile, "w")
+            self.file = open(self.outfile, p)
         except IOError:
             sys.exit('Cannot open file '+self.outfile)
     

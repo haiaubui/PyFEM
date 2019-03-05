@@ -9,6 +9,80 @@ import numpy as np
 import FEMElement as FE
 import math
 
+class BoundaryCommonData(FE.CommonData):
+    """
+    Common array that can be shared between elements of the same type
+    This help reducing memory as well as improve speed
+    """
+    def __init__(self, Nnod, ndim, intData, dtype = 'float64', jbasisF=None,\
+                 intSingData = None):
+        """
+        Initialize Common Data object
+        Input:
+            Nnod: number of node of one element
+            ndim: number of dimensions
+            intData: integration data
+            dtype: datatype of float number
+        """
+        self.dtype = dtype
+        self.intData = intData
+        self.Nnod = Nnod
+        self.Ndim = ndim
+        if intData is not None:
+            self.N_ = []
+            self.ng = intData.getNumberPoint()
+            for i in range(self.ng):
+                self.N_.append(np.zeros(self.Nnod))
+                
+        if (intData is not None) and (jbasisF is not None):
+            self.Nj_ = []
+            self.ng = intData.getNumberPoint()
+            for i in range(self.ng):
+                self.Nj_.append(np.zeros(self.Nnod))
+                
+            self.dNsj_ = []
+            for i in range(self.intData.getNumberPoint()):
+                self.dNsj_.append(np.zeros(self.Nnod))
+        self.basisFuncJ = jbasisF
+        
+        if (intData is not None) and (jbasisF is not None):
+            self.dNx_ = None
+            self.Nsx_ = []
+            if intSingData is None:
+                ng = intData.getNumberPoint()
+            else:
+                ng = intSingData.getNumberPoint()
+            for i in range(ng):
+                self.Nsx_.append(np.zeros(self.Nnod))
+            self.dNsx_ = []   
+            for i in range(ng):
+                self.dNsx_.append(np.zeros(self.Nnod)) 
+        
+    def getNj(self):
+        try:
+            return self.Nj_
+        except AttributeError:
+            return None
+        
+    def getdNj(self):
+        try:
+            return self.dNsj_
+        except AttributeError:
+            return None
+        
+    def getNxj(self):
+        try:
+            return self.Nsx_
+        except AttributeError:
+            return None
+        
+    def getdNxj(self):
+        try:
+            return self.dNsx_
+        except AttributeError:
+            return None
+
+
 class StandardBoundary(FE.StandardElement):
     """
     Standard Boundary element
@@ -78,6 +152,7 @@ class StandardBoundary(FE.StandardElement):
         self.dNsx_ = []   
         for i in range(ng):
             self.dNsx_.append(np.zeros((self.Ndim,self.Nnod)))   
+            
         self.prepareExtSingData()
         self.calculateBasisX(self.nodeOrder)
         #self.temp_weight = 0.0
@@ -90,6 +165,25 @@ class StandardBoundary(FE.StandardElement):
                                          [self.normv[0],self.normv[1],0.0],\
                                          )[0:2]
         self.tangent /= np.linalg.norm(self.tangent)
+        self.jbasis = False
+        self.sublinear=False
+        
+    def calculateBasis(self, NodeOrder):
+        FE.StandardElement.calculateBasis(self,NodeOrder)
+        ig = 0
+        try:
+            self.Nsj_ = self.commonData.getNj()
+            self.dNsj_ = self.commonData.getdNj()
+            if self.Nsj_ is None:
+                return
+            for xg, wg in self.intData:
+                self.commonData.basisFuncJ(xg,self.pd,\
+                                           self.Nsj_[ig], self.dNsj_[ig])
+                ig += 1
+            self.jbasis = True
+        except AttributeError:
+            self.jbasis = False
+            return
         
     def distanceToPoint(self, X):
         X1 = self.Nodes[0].getX()
@@ -184,14 +278,48 @@ class StandardBoundary(FE.StandardElement):
             #    self.factorxr[i][ig] = wgxx[i][ig]
             ig += 1
             
+        try:
+            self.Nsjx_ = self.commonData.getNxj()
+            self.dNsjx_ = self.commonData.getdNxj()
+            if self.Nsjx_ is None or self.dNsjx_ is None:
+                return
+            ig = 0
+            for xg, wg in intData:
+                self.commonData.basisFuncJ(xg,self.pd,\
+                                           self.Nsjx_[ig], self.dNsjx_[ig])
+        except AttributeError:
+            pass
+            
+    def getBasis(self):
+        self.dN_ = self.dNs_[self.ig]
+        self.N_ = self.Ns_[self.ig]
+        if self.jbasis:
+            self.dNj_ = self.dNsj_[self.ig]
+            self.Nj_ = self.Nsj_[self.ig]
+        else:
+            self.dNj_ = self.dN_
+            self.Nj_ = self.N_
+        
     def getBasisX(self):
         if self.sing_int_type == 0:
             self.dNx_ = self.dNs_[self.igx]
             self.Nx_ = self.Ns_[self.igx]
+            if self.jbasis:
+                self.dNjx_ = self.dNsj_[self.igx]
+                self.Njx_ = self.Nsj_[self.igx]
+            else:
+                self.dNjx_ = self.dNx_
+                self.Njx_ = self.Nx_
             return
         elif self.sing_int_type == 1:
             self.dNx_ = self.dNsx_[self.igx]
             self.Nx_ = self.Nsx_[self.igx]
+            if self.jbasis:
+                self.dNjx_ = self.dNsjx_[self.igx]
+                self.Njx_ = self.Nsjx_[self.igx]
+            else:
+                self.dNjx_ = self.dNx_
+                self.Njx_ = self.Nx_
             return
         elif self.sing_int_type == 2:
             self.dNx_ = self.dNsex_[self.ig][self.igx]
@@ -313,7 +441,7 @@ class StandardBoundary(FE.StandardElement):
                 else:
                     x_ = self.x_
                 if element.deformed and not element.current:
-                    xx_ = element.xx_ + element.u_[0:2]
+                    xx_ = element.xx_ + element.ux_[0:2]
                 else:
                     xx_ = element.xx_
                 self.calculateGreen(x_,xx_)
@@ -477,7 +605,7 @@ class StandardBoundary(FE.StandardElement):
                     except AttributeError:
                         pass
                     # loop over orther boundary elements
-                    for belement in otherB:
+                    for ibe,belement in enumerate(otherB):
                         if belement == self:
                             continue
                         self.subCalculate(data, belement, self.Nodes[i],\
@@ -517,7 +645,7 @@ class StandardBoundary(FE.StandardElement):
                         
                 # loop over orther boundary elements
                 for belement in otherB:
-                    if belement == self:
+                    if belement == self or belement.sublinear:
                         continue
                     self.subCalculate(data, belement, self.Nodes[i],\
                     i, linear)
@@ -539,10 +667,21 @@ class StandardBoundary(FE.StandardElement):
         N_ = self.Ns_[0]
         dN_ = self.dNs_[0]
         
+        
         res = np.zeros(self.Ndof)
+        
+        if self.jbasis:
+            Nj_ = self.Nsj_[0]
+            dNj_ = self.dNsj_[0]
+            self.uj_ = np.zeros(self.Ndof,dtype = self.dtype)
             
         for xg,wg in intDatx:
             self.basisND(xg, N_, dN_)
+            if self.jbasis:
+                self.commonData.basisFuncJ(xg, self.pd, Nj_, dNj_)
+                self.uj_.fill(0.0)
+                self.getU(self.uj_,Nj_)
+                
             factor = self.Jacobian(dN_)*np.prod(wg)
             
             self.x_.fill(0.0)
@@ -557,6 +696,11 @@ class StandardBoundary(FE.StandardElement):
             if self.timeOrder == 2:
                 self.a_.fill(0.0)
                 self.getA(self.a_,N_)
+            
+#            try:
+#                self.calculateFES()
+#            except AttributeError:
+#                pass
             
             try:
                 self.calculateGreen(x_p,self.x_)

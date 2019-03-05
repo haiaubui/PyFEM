@@ -460,14 +460,14 @@ class MeshWithBoundaryElement(Mesh):
                 anchors.append(n)
                 
         self.nanPoints = []
-        for e in self.BoundaryElements:
-            for n in e.Nodes:
-                if not n.isInside(boders):
-                    continue
-                nx = n.copyToPosition(n.getX()+1.0e-8*e.normv)
-                if nx not in anchors:
-                    anchors.append(nx)
-                    self.nanPoints.append(nx)
+#        for e in self.BoundaryElements:
+#            for n in e.Nodes:
+#                if not n.isInside(boders):
+#                    continue
+#                nx = n.copyToPosition(n.getX()+1.0e-8*e.normv)
+#                if nx not in anchors:
+#                    anchors.append(nx)
+#                    self.nanPoints.append(nx)
                 
         x = np.arange(boders[0],boders[1]+res0*0.5,res0).tolist()
         y = np.arange(boders[2],boders[3]+res1*0.5,res1).tolist()
@@ -484,18 +484,18 @@ class MeshWithBoundaryElement(Mesh):
                 
         X,Y = np.meshgrid(x,y)
         nodes = nodes_from_meshgrid(X, Y, self.polar)
-        for e in self.BoundaryElements:
-            for n in nodes:
-                try:
-                    if e.distanceToPoint(n.getX())<1.0e-7:
-                        if n not in self.nanPoints:
-                            self.nanPoints.append(n)
-                except FB.InsideElement:
-                    continue
+#        for e in self.BoundaryElements:
+#            for n in nodes:
+#                try:
+#                    if e.distanceToPoint(n.getX())<1.0e-7:
+#                        if n not in self.nanPoints:
+#                            self.nanPoints.append(n)
+#                except FB.InsideElement:
+#                    continue
         return nodes,X,Y
     
         
-    def plot(self, fig = None, col = '-b', fill_mat = False, e_number = False,\
+    def plot(self, fig = None, col = '-b',colb = '-r', fill_mat = False, e_number = False,\
     n_number = False, deformed = False, deformed_factor=1.0):
         """
         plot the mesh
@@ -506,7 +506,7 @@ class MeshWithBoundaryElement(Mesh):
         max_mat = 0
         for i,e in enumerate(self.Elements):
             if isinstance(e, FB.StandardBoundary):
-                col1 = '--r'
+                col1 = colb
             else:
                 col1 = col
             if e_number:
@@ -538,7 +538,7 @@ class MeshWithBoundaryElement(Mesh):
             ax = fig.add_subplot(111)
             collection.set_array(np.array(colors))
             ax.add_collection(collection)
-            fig.colorbar(collection, ax = ax)
+#            fig.colorbar(collection, ax = ax)
             
         pl.gca().set_aspect('equal', adjustable='box')
         return fig
@@ -550,13 +550,15 @@ class MeshWithBoundaryElement(Mesh):
         pl.gca().set_aspect('equal', adjustable='box')
         return fig
         
-    def getValue(self, x, val='u'):
+    def getValue(self, x, val='u',intDat = None):
         """
         Get value at position x
         If val=='u' and x is outside mesh, calculate value from boundary.
         Raise OutsideMesh otherwise
         """
-        for e in self.Elements:
+        for i,e in enumerate(self.Elements):
+            if i >= (self.Ne-self.NBe):
+                continue
             try:
                 xi = e.getXi(x)
                 return e.postCalculate(xi, val)
@@ -567,7 +569,7 @@ class MeshWithBoundaryElement(Mesh):
             
         res = np.zeros(self.Nodes[0].Ndof,self.Nodes[0].dtype)
         for e in self.BoundaryElements:
-            res += e.postCalculateX(x)
+            res += e.postCalculateX(x,intDat)
             
         return res
     
@@ -616,6 +618,8 @@ class MeshWithBoundaryElement(Mesh):
         values.fill(np.nan)
         dummyval = np.zeros(self.Nodes[0].Ndof)
         grad = val == 'gradu'
+        print('number of points: '+str(len(nodes)))
+        print('finished creating grid, calculating value...')
         for i,n in enumerate(nodes):
             try:
                 if n in self.nanPoints and val == 'u':

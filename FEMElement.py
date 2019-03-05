@@ -84,6 +84,8 @@ class Element(object):
         
         if commonData is None:
             self.commonData = CommonData(self.Nnod,self.Ndim,intData,dtype)
+        else:
+            self.commonData = commonData
         if commonData is not None and commonData.intData != intData:
             assert 'incompatible between common data and integration data'
         try:
@@ -1102,15 +1104,18 @@ class StandardElement(Element):
         #    z = [n.getX()[2] for n in self.Nodes]
         if self.Ndim == 1:
             pl.plot(np.array(x),col)
-            return fig,[n.getX() for n in self.Nodes]
         if self.Ndim == 2:
             pl.plot(np.array(x),np.array(y),col)
-            return fig,[n.getX() for n in self.Nodes]
+            
         if self.Ndim == 3:
             """
             Will be implemented later
             """
             return None
+        if number is not None:
+            c = 0.5*(self.Nodes[0].getX()+self.Nodes[-1].getX())
+            pl.text(c[0],c[1],str(number))
+        return fig,[n.getX() for n in self.Nodes]
             
 
 # End of class StandardElement definition

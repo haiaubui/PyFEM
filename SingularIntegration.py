@@ -8,6 +8,7 @@ Created on Wed Dec  6 12:54:02 2017
 import math
 import numpy as np
 import scipy.special as scs
+import scipy.integrate as sci
 import IntegrationData as Idat
 
 __all__ = ['SingularGaussian1D','Gaussian_1D_log','Gaussian_1D_rat',
@@ -95,11 +96,15 @@ def Gaussian_1D_rat2(t, ng):
     x,w = Idat.Gaussian1D(ng)
     w1 = np.zeros(ng)
     for i in range(ng):
+#        for j in range(ng-1):
+#            for k in range(j,math.trunc((ng+j-3)/2)+1):
+#                w1[i] -= (2*j+1)*(4*k+3-2*i)*Legendre_Qn(t,j)*\
+#                poly_Legendre(x[i],2*k+1-(i+1))
+        for j in range(1,ng):
+            for k in range(math.trunc((j-1)/2)+1):
+                w1[i] -= (2*j-4*k-1)*poly_Legendre(x[i],j)*(2*j+1)*\
+                Legendre_Qn(t,j-2*k-1)
         for j in range(ng):
-            if j != ng-1:
-                for k in range(j,math.ceil((ng+j-3)/2)):
-                    w1[i] -= (2*j+1)*(4*k+3-2*i)*Legendre_Qn(t,j)*\
-                    poly_Legendre(x[i],2*k+1-i)
             w1[i] += (2.0*j+1.0)/2*poly_Legendre(x[i],j)*\
             (1.0/(t-1.0) - ((-1.0)**j)/(t+1))
         w1[i] *= w[i]
@@ -144,9 +149,17 @@ def integration_PnRat(t, pn):
     return y
 
 def integration_PnRat2(t, pn):
-    x,w = Gaussian_1D_rat2(t, 20)
+    
+#    def Leg_Rat2(x):
+#        return poly_Legendre(x, pn)/((t-x)**2)
+#    
+#    val,err=sci.quad(Leg_Rat2,-1.0,1.0,epsabs=1.49e-14, epsrel=1.49e-14,\
+#    points = [t])
+#    return val
+    
+    x,w = Gaussian_1D_rat2(t, 24)
     y = 0.0
-    for i in range(20):
+    for i in range(24):
         y += w[i]*poly_Legendre(x[i],pn)
         
     return y
@@ -196,6 +209,7 @@ def Gaussian_1D_Pn_Log_Rat_Rat2(t, ng, m = -1):
 
 def poly_Legendre(x, n):
     if n < 0:
+#        return poly_Legendre(x,-n-1)
         return 1.0
     p = scs.legendre(n)
     return p(x)

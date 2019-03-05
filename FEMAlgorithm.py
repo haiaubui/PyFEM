@@ -347,18 +347,27 @@ class LinearStaticAlgorithm(StaticAlgorithm):
     """
     Linar static algorithm
     """        
+    def getTime(self):
+        """
+        Return lambda of current load step
+        """
+        return 1.0
+    
     def calculate(self):
         """
         start analysis
         """
+        print("Start Analysis")
         self.prepareElements()
-        # calculate matrices and vector
-        for element in self.mesh:
-            element.calculate(self)
+        self.connect()
             
         # calculate external point load
+        self.U.fill(0.0)
         self.calculateExternalPointLoad()
+        self.calculateExternalBodyLoad()
         
+        self.calculateLinearMatrices()
+        self.addLinearMatrices()
         # homogeneous Dirichlet Boundary Condition
         if self.checkDirichletBC():
             self.Re -= np.dot(self.Ktd,self.Ud)
@@ -369,6 +378,7 @@ class LinearStaticAlgorithm(StaticAlgorithm):
         # write data to output
         self.output.outputData(self)
         self.output.finishOutput()
+        print("Finished!")
 
 
 class NotConverged(Exception):
